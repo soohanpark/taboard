@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Taboard · tabextend clone</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside class="tab-drawer" id="tab-drawer">
+        <div class="drawer-head">
+          <div class="drawer-count" id="tab-count">0</div>
+        </div>
+        <div class="drawer-list" id="tab-list"></div>
+        <div class="drawer-filter">
+          <input type="search" id="tab-filter" placeholder="탭 검색" />
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="workspace-header">
+          <nav class="space-tabs" id="space-tabs"></nav>
+          <div class="workspace-actions">
+            <div class="search-control" id="search-control">
+              <input
+                type="search"
+                id="search-input"
+                placeholder="카드 검색"
+                aria-label="카드 검색"
+              />
+              <button class="icon-button search-button" id="search-focus" title="검색 (⌘/Ctrl + K)">
+                🔍
+              </button>
+            </div>
+            <div class="drive-control" id="drive-control">
+              <button class="icon-button drive-button" id="drive-connect" title="Google Drive 연결">
+                <svg viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg">
+                  <path
+                    d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z"
+                    fill="#0066da"
+                  />
+                  <path
+                    d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z"
+                    fill="#00ac47"
+                  />
+                  <path
+                    d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z"
+                    fill="#ea4335"
+                  />
+                  <path
+                    d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z"
+                    fill="#00832d"
+                  />
+                  <path
+                    d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z"
+                    fill="#2684fc"
+                  />
+                  <path
+                    d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z"
+                    fill="#ffba00"
+                  />
+                </svg>
+                <span>Google Drive Sync</span>
+              </button>
+              <div class="drive-menu" id="drive-menu" role="menu" aria-label="Drive options">
+                <button type="button" class="drive-menu-item" id="drive-menu-sync">동기화</button>
+                <button type="button" class="drive-menu-item danger" id="drive-menu-disconnect">
+                  연결 해제
+                </button>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <section class="board-wrapper">
+          <div class="board" id="board"></div>
+          <button class="add-column" id="add-column">＋ 칸반 보드 추가</button>
+        </section>
+
+        <footer class="app-footer">
+          <a
+            class="footer-link"
+            href="https://github.com/soohanpark/taboard"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <svg class="footer-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 0C5.373 0 0 5.485 0 12.253c0 5.414 3.438 10.003 8.205 11.622.6.113.82-.263.82-.583 0-.288-.01-1.051-.016-2.063-3.338.733-4.042-1.645-4.042-1.645-.546-1.41-1.333-1.787-1.333-1.787-1.09-.761.083-.745.083-.745 1.205.087 1.84 1.26 1.84 1.26 1.07 1.865 2.807 1.327 3.491 1.015.108-.793.418-1.327.76-1.632-2.665-.31-5.467-1.368-5.467-6.088 0-1.345.465-2.444 1.235-3.304-.124-.31-.535-1.563.117-3.257 0 0 1.008-.329 3.301 1.26a11.07 11.07 0 0 1 3.004-.415c1.02.004 2.046.142 3.004.415 2.291-1.589 3.297-1.26 3.297-1.26.654 1.694.243 2.947.12 3.257.77.861 1.233 1.96 1.233 3.304 0 4.735-2.807 5.775-5.481 6.079.43.376.823 1.122.823 2.263 0 1.632-.015 2.95-.015 3.352 0 .322.217.698.827.58C20.565 22.252 24 17.663 24 12.253 24 5.486 18.627 0 12 0Z"
+              ></path>
+            </svg>
+            <span>Taboard Github</span>
+          </a>
+        </footer>
+      </main>
+    </div>
+
+    <section class="modal hidden" id="card-modal" aria-hidden="true">
+      <div class="modal-backdrop" data-close="card"></div>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <header>
+          <h3 id="modal-title">카드</h3>
+        </header>
+        <form id="card-form">
+          <input type="hidden" name="cardId" />
+          <input type="hidden" name="sectionId" />
+          <label>
+            <span>제목</span>
+            <input name="title" required />
+          </label>
+          <label>
+            <span>카드 유형</span>
+            <select name="type">
+              <option value="link">링크</option>
+              <option value="note">노트</option>
+              <option value="todo">할 일</option>
+            </select>
+          </label>
+          <label>
+            <span>설명</span>
+            <textarea name="note" rows="3"></textarea>
+          </label>
+          <label>
+            <span>태그 (쉼표 분리)</span>
+            <input name="tags" placeholder="design, reading" />
+          </label>
+          <div class="form-actions">
+            <button type="button" class="ghost-button" data-delete-card>삭제</button>
+            <button type="submit">저장</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="modal hidden" id="space-modal" aria-hidden="true">
+      <div class="modal-backdrop" data-close="space"></div>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="space-modal-title">
+        <header>
+          <h3 id="space-modal-title">공간</h3>
+        </header>
+        <form id="space-form">
+          <input type="hidden" name="spaceId" />
+          <label>
+            <span>공간 이름</span>
+            <input name="name" placeholder="예: WORK" required />
+          </label>
+          <div class="form-actions">
+            <button type="button" class="ghost-button" data-close="space">취소</button>
+            <button type="button" class="ghost-button" data-delete-space>삭제</button>
+            <button type="submit">저장</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="modal hidden" id="confirm-modal" aria-hidden="true">
+      <div class="modal-backdrop" data-close="confirm"></div>
+      <div
+        class="modal-panel confirm-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-modal-title"
+      >
+        <header>
+          <h3 id="confirm-modal-title">확인</h3>
+        </header>
+        <p id="confirm-message"></p>
+        <div class="form-actions">
+          <button type="button" class="ghost-button" id="confirm-cancel">취소</button>
+          <button type="button" id="confirm-accept">확인</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="snackbar" class="snackbar" role="status" aria-live="polite"></div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
