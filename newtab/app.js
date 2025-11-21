@@ -24,6 +24,9 @@ const addColumnBtn = document.getElementById("add-column");
 const cardModalEl = document.getElementById("card-modal");
 const cardForm = document.getElementById("card-form");
 const cardDeleteBtn = cardForm.querySelector("[data-delete-card]");
+const cardNoteField = cardForm.querySelector("[data-card-field='note']");
+const cardUrlField = cardForm.querySelector("[data-card-field='url']");
+const cardUrlInput = cardForm.elements.url;
 const spaceModalEl = document.getElementById("space-modal");
 const spaceForm = document.getElementById("space-form");
 const spaceDeleteBtn = spaceForm.querySelector("[data-delete-space]");
@@ -202,6 +205,19 @@ const stopDriveBackgroundSync = () => {
 };
 
 const formatCount = (count) => `${count} ${count === 1 ? "site" : "sites"}`;
+
+const updateCardFormFields = (type) => {
+  const isLink = type === "link";
+  if (cardNoteField) {
+    cardNoteField.style.display = isLink ? "none" : "";
+  }
+  if (cardUrlField) {
+    cardUrlField.style.display = isLink ? "" : "none";
+  }
+  if (cardUrlInput) {
+    cardUrlInput.required = isLink;
+  }
+};
 
 const cardMatchesSearch = (card, searchTerm) => {
   if (!searchTerm) return true;
@@ -701,14 +717,18 @@ const openCardModal = ({ sectionId, cardId = null, spaceId = null }) => {
     cardForm.elements.title.value = card.title;
     cardForm.elements.type.value = card.type ?? "note";
     cardForm.elements.note.value = card.note ?? "";
+    cardForm.elements.url.value = card.url ?? "";
     cardForm.elements.tags.value = card.tags?.join(", ") ?? "";
     cardDeleteBtn.style.display = "inline-flex";
   } else {
     cardForm.reset();
     cardForm.elements.sectionId.value = resolvedSectionId;
     cardForm.elements.type.value = "note";
+    cardForm.elements.url.value = "";
     cardDeleteBtn.style.display = "none";
   }
+
+  updateCardFormFields(cardForm.elements.type.value);
 
   cardModalEl.classList.add("visible");
   cardModalEl.classList.remove("hidden");
@@ -1229,27 +1249,36 @@ addColumnBtn?.addEventListener("click", () => {
   showSnackbar("보드를 추가했습니다.");
 });
 
+boardEl.addEventListener("contextmenu", (event) => {
+  const card = event.target.closest(".card");
+  if (!card) return;
+  event.preventDefault();
+  const sectionId = card.dataset.sectionId;
+  const cardId = card.dataset.cardId;
+  const spaceId = card.dataset.spaceId || null;
+  openCardModal({ sectionId, cardId, spaceId });
+});
+
+cardForm.elements.type.addEventListener("change", (event) => {
+  updateCardFormFields(event.target.value);
+});
+
 cardForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const formData = new FormData(cardForm);
   const cardId = formData.get("cardId");
   const sectionId = formData.get("sectionId");
   const existingContext = findCardContext(currentState, { sectionId, cardId });
-  const existingUrl = cardId
-    ? (() => {
-        const card = existingContext.card;
-        return card?.url ?? "";
-      })()
-    : "";
+  const cardType = formData.get("type") ?? "note";
   const resolvedSectionId =
     sectionId || existingContext.section?.id || getActiveSpace()?.sections?.[0]?.id || "";
   const targetSpaceId = existingContext.space?.id ?? getActiveSpace()?.id ?? null;
 
   const payload = {
     title: formData.get("title")?.toString().trim(),
-    type: formData.get("type"),
-    note: formData.get("note")?.toString() ?? "",
-    url: existingUrl,
+    type: cardType,
+    note: cardType === "link" ? "" : (formData.get("note")?.toString().trim() ?? ""),
+    url: cardType === "link" ? (formData.get("url")?.toString().trim() ?? "") : "",
     tags:
       formData
         .get("tags")
@@ -1261,6 +1290,11 @@ cardForm.addEventListener("submit", (event) => {
 
   if (!payload.title || !resolvedSectionId) {
     showSnackbar("카드 정보를 다시 확인해 주세요.");
+    return;
+  }
+
+  if (payload.type === "link" && !payload.url) {
+    showSnackbar("링크를 입력해 주세요.");
     return;
   }
 

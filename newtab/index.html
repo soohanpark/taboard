@@ -126,7 +126,11 @@
               <option value="todo">할 일</option>
             </select>
           </label>
-          <label>
+          <label data-card-field="url">
+            <span>링크</span>
+            <input name="url" type="url" placeholder="https://example.com" />
+          </label>
+          <label data-card-field="note">
             <span>설명</span>
             <textarea name="note" rows="3"></textarea>
           </label>
@@ -135,6 +139,7 @@
             <input name="tags" placeholder="design, reading" />
           </label>
           <div class="form-actions">
+            <button type="button" class="ghost-button" data-close="card">취소</button>
             <button type="button" class="ghost-button" data-delete-card>삭제</button>
             <button type="submit">저장</button>
           </div>
