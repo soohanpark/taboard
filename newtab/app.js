@@ -54,6 +54,7 @@ const cleanupTabListeners = [];
 const TAB_DRAG_MIME = "application/taboard-tab";
 let suppressCardClick = false;
 const DRIVE_SYNC_INTERVAL = 30 * 60 * 1000;
+const VIEW_MODES = { SPACES: "spaces", FAVORITES: "favorites" };
 let driveSyncIntervalId = null;
 let hasPulledDriveState = false;
 let driveSyncInFlight = false;
@@ -70,6 +71,29 @@ const getActiveSpace = (state = currentState) => {
 
 const findSection = (space, sectionId) =>
   space?.sections?.find((section) => section.id === sectionId) ?? null;
+
+const findSpaceById = (state, spaceId) =>
+  state?.spaces?.find((space) => space.id === spaceId) ?? null;
+
+const findCardContext = (state, { spaceId = null, sectionId = null, cardId = null }) => {
+  let space =
+    findSpaceById(state, spaceId) ??
+    state?.spaces?.find((candidate) =>
+      candidate.sections?.some((section) => section.id === sectionId)
+    ) ??
+    state?.spaces?.find((candidate) =>
+      candidate.sections?.some((section) => section.cards?.some((item) => item.id === cardId))
+    ) ??
+    null;
+
+  let section = space?.sections?.find((item) => item.id === sectionId) ?? null;
+  if (!section && space && cardId) {
+    section = space.sections?.find((item) => item.cards?.some((card) => card.id === cardId));
+  }
+
+  const card = section?.cards?.find((item) => item.id === cardId) ?? null;
+  return { space, section, card };
+};
 
 const hideSnackbar = () => {
   clearTimeout(snackbarTimer);
@@ -179,14 +203,42 @@ const stopDriveBackgroundSync = () => {
 
 const formatCount = (count) => `${count} ${count === 1 ? "site" : "sites"}`;
 
+const cardMatchesSearch = (card, searchTerm) => {
+  if (!searchTerm) return true;
+  const haystack = [card.title, card.note, card.url, card.tags?.join(" ") ?? ""]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(searchTerm.toLowerCase());
+};
+
 const renderSpaceTabs = (state) => {
   spaceTabsEl.innerHTML = "";
+
+  const favoritesTab = document.createElement("button");
+  favoritesTab.type = "button";
+  favoritesTab.className = `space-tab space-tab-favorites${
+    state.preferences.viewMode === VIEW_MODES.FAVORITES ? " active" : ""
+  }`;
+  favoritesTab.dataset.viewMode = VIEW_MODES.FAVORITES;
+  favoritesTab.textContent = "★";
+  spaceTabsEl.appendChild(favoritesTab);
+
   state.spaces.forEach((space) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `space-tab${space.id === state.preferences.activeSpaceId ? " active" : ""}`;
+    const isActiveSpace =
+      state.preferences.viewMode === VIEW_MODES.SPACES &&
+      space.id === state.preferences.activeSpaceId;
+    button.className = `space-tab${isActiveSpace ? " active" : ""}`;
     button.dataset.spaceId = space.id;
-    button.textContent = space.name;
+    const dot = document.createElement("span");
+    dot.className = "favorites-space-dot space-dot";
+    dot.style.backgroundColor = space.accent ?? "var(--accent)";
+    const name = document.createElement("span");
+    name.textContent = space.name;
+    button.appendChild(dot);
+    button.appendChild(name);
     spaceTabsEl.appendChild(button);
   });
 
@@ -199,22 +251,52 @@ const renderSpaceTabs = (state) => {
 };
 
 const createCardElement = (card, sectionId, searchTerm, options = {}) => {
+  const {
+    spaceId = null,
+    readOnly = false,
+    originLabel = "",
+    animateCards = true,
+    originAccent = null,
+  } = options;
   const cardEl = document.createElement("article");
   cardEl.className = "card";
   cardEl.dataset.cardId = card.id;
   cardEl.dataset.sectionId = sectionId;
+  cardEl.dataset.spaceId = spaceId ?? "";
   cardEl.dataset.type = card.type;
-  cardEl.draggable = true;
+  cardEl.draggable = !readOnly;
+  if (readOnly) {
+    cardEl.classList.add("card-readonly");
+  }
+  if (card.done) {
+    cardEl.classList.add("is-done");
+  }
+  if (originAccent) {
+    cardEl.style.setProperty("--origin-accent", originAccent);
+  }
 
   if (card.type === "link" && card.url) {
     cardEl.classList.add("card-link");
   }
-  if (options.animateCards === false) {
+  if (animateCards === false) {
     cardEl.classList.add("card-no-animate");
   }
 
   const floating = document.createElement("div");
   floating.className = "card-floating-actions";
+
+  if (card.type === "todo") {
+    const doneButton = document.createElement("button");
+    doneButton.type = "button";
+    doneButton.className = "card-floating-button card-done-button";
+    doneButton.dataset.cardAction = "toggle-done";
+    doneButton.title = card.done ? "완료 취소" : "완료 처리";
+    doneButton.textContent = card.done ? "✔" : "☐";
+    if (card.done) {
+      doneButton.classList.add("is-done");
+    }
+    floating.appendChild(doneButton);
+  }
 
   const editIcon = document.createElement("button");
   editIcon.type = "button";
@@ -223,6 +305,17 @@ const createCardElement = (card, sectionId, searchTerm, options = {}) => {
   editIcon.title = "편집";
   editIcon.textContent = "✎";
   floating.appendChild(editIcon);
+
+  const favoriteIcon = document.createElement("button");
+  favoriteIcon.type = "button";
+  favoriteIcon.className = "card-floating-button card-favorite-button";
+  favoriteIcon.dataset.cardAction = "favorite";
+  favoriteIcon.title = card.favorite ? "즐겨찾기 해제" : "즐겨찾기";
+  favoriteIcon.textContent = card.favorite ? "★" : "☆";
+  if (card.favorite) {
+    favoriteIcon.classList.add("is-active");
+  }
+  floating.appendChild(favoriteIcon);
 
   const deleteIcon = document.createElement("button");
   deleteIcon.type = "button";
@@ -233,6 +326,13 @@ const createCardElement = (card, sectionId, searchTerm, options = {}) => {
   floating.appendChild(deleteIcon);
 
   cardEl.appendChild(floating);
+
+  if (originLabel) {
+    const origin = document.createElement("span");
+    origin.className = "card-origin";
+    origin.textContent = originLabel;
+    cardEl.appendChild(origin);
+  }
 
   const title = document.createElement("p");
   title.className = "card-title";
@@ -265,51 +365,25 @@ const createCardElement = (card, sectionId, searchTerm, options = {}) => {
     cardEl.appendChild(tagsEl);
   }
 
-  const actions = document.createElement("div");
-  actions.className = "card-actions";
-
-  const favoriteBtn = document.createElement("button");
-  favoriteBtn.type = "button";
-  favoriteBtn.dataset.cardAction = "favorite";
-  favoriteBtn.textContent = card.favorite ? "★" : "☆";
-  actions.appendChild(favoriteBtn);
-
-  if (card.type === "todo") {
-    const doneBtn = document.createElement("button");
-    doneBtn.type = "button";
-    doneBtn.dataset.cardAction = "toggle-done";
-    doneBtn.textContent = card.done ? "완료" : "진행";
-    actions.appendChild(doneBtn);
-  }
-
-  cardEl.appendChild(actions);
-
-  const matchesSearch = () => {
-    if (!searchTerm) return true;
-    const haystack = [card.title, card.note, card.url, card.tags?.join(" ") ?? ""]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return haystack.includes(searchTerm.toLowerCase());
-  };
-
-  const matches = matchesSearch();
+  const matches = cardMatchesSearch(card, searchTerm);
   if (searchTerm && !matches) {
     cardEl.classList.add("card-hidden");
   } else {
     cardEl.classList.remove("card-hidden");
   }
 
-  cardEl.addEventListener("dragstart", (event) => {
-    draggingCard = { cardId: card.id, sectionId };
-    cardEl.classList.add("dragging");
-    event.dataTransfer.effectAllowed = "move";
-  });
+  if (!readOnly) {
+    cardEl.addEventListener("dragstart", (event) => {
+      draggingCard = { cardId: card.id, sectionId };
+      cardEl.classList.add("dragging");
+      event.dataTransfer.effectAllowed = "move";
+    });
 
-  cardEl.addEventListener("dragend", () => {
-    draggingCard = null;
-    cardEl.classList.remove("dragging");
-  });
+    cardEl.addEventListener("dragend", () => {
+      draggingCard = null;
+      cardEl.classList.remove("dragging");
+    });
+  }
 
   return cardEl;
 };
@@ -395,6 +469,7 @@ const moveCard = (cardId, fromSectionId, toSectionId, targetIndex) => {
 };
 
 const renderBoard = (state, options = {}) => {
+  boardEl.classList.remove("favorites-view");
   boardEl.innerHTML = "";
   const space = getActiveSpace(state);
   if (!space) {
@@ -463,6 +538,7 @@ const renderBoard = (state, options = {}) => {
     section.cards.forEach((card) => {
       const cardEl = createCardElement(card, section.id, searchTerm, {
         animateCards: options.animateCards,
+        spaceId: space.id,
       });
       cardList.appendChild(cardEl);
     });
@@ -477,35 +553,159 @@ const renderBoard = (state, options = {}) => {
     addCardBtn.type = "button";
     addCardBtn.className = "add-card";
     addCardBtn.dataset.sectionId = section.id;
-    addCardBtn.textContent = "＋ 카드";
+    addCardBtn.textContent = "+";
+    addCardBtn.setAttribute("aria-label", "카드 추가");
     column.appendChild(addCardBtn);
     boardEl.appendChild(column);
   });
+
+  if (addColumnBtn) {
+    addColumnBtn.classList.add("add-column-tile");
+    addColumnBtn.textContent = "+";
+    addColumnBtn.setAttribute("aria-label", "보드 추가");
+    addColumnBtn.style.display = "inline-flex";
+    boardEl.appendChild(addColumnBtn);
+  }
 };
 
-const openCardModal = ({ sectionId, cardId = null }) => {
-  const activeSpace = getActiveSpace();
-  if (!activeSpace) {
+const getFavoriteGroups = (state, searchTerm) =>
+  state.spaces
+    .map((space) => {
+      const cards = [];
+      space.sections.forEach((section) => {
+        section.cards.forEach((card) => {
+          if (card.favorite && cardMatchesSearch(card, searchTerm)) {
+            cards.push({ card, sectionId: section.id, sectionName: section.name });
+          }
+        });
+      });
+      return { space, cards };
+    })
+    .filter((group) => group.cards.length);
+
+const renderFavoritesBoard = (state) => {
+  boardEl.classList.add("favorites-view");
+  boardEl.innerHTML = "";
+  const searchTerm = state.preferences.searchTerm?.trim();
+  const favoriteGroups = getFavoriteGroups(state, searchTerm);
+  const isFiltering = Boolean(searchTerm);
+
+  if (!favoriteGroups.length) {
+    const empty = document.createElement("div");
+    empty.className = "favorites-empty";
+    const emptyIcon = document.createElement("div");
+    emptyIcon.className = "favorites-empty-icon";
+    emptyIcon.textContent = "☆";
+    const emptyTitle = document.createElement("p");
+    emptyTitle.textContent = isFiltering
+      ? "검색어에 맞는 즐겨찾기 카드가 없습니다."
+      : "즐겨찾기한 카드가 없습니다.";
+    const emptyHint = document.createElement("p");
+    emptyHint.className = "favorites-empty-hint";
+    emptyHint.textContent = isFiltering
+      ? "검색어를 바꾸거나 즐겨찾기 표시를 추가해 보세요."
+      : "카드 우측 상단의 별을 눌러 즐겨찾기에 추가하세요.";
+    empty.appendChild(emptyIcon);
+    empty.appendChild(emptyTitle);
+    empty.appendChild(emptyHint);
+    boardEl.appendChild(empty);
+    return;
+  }
+
+  const hero = document.createElement("div");
+  hero.className = "favorites-hero";
+  const heroIcon = document.createElement("div");
+  heroIcon.className = "favorites-hero-icon";
+  heroIcon.textContent = "★";
+  const heroText = document.createElement("div");
+  heroText.className = "favorites-hero-text";
+  const heroTitle = document.createElement("p");
+  heroTitle.className = "favorites-hero-title";
+  heroTitle.textContent = "즐겨찾기 모음";
+  const heroSubtitle = document.createElement("p");
+  heroSubtitle.className = "favorites-hero-subtitle";
+  heroSubtitle.textContent = "가장 중요한 카드들을 한곳에서 바로 확인하세요.";
+  heroText.appendChild(heroTitle);
+  heroText.appendChild(heroSubtitle);
+  hero.appendChild(heroIcon);
+  hero.appendChild(heroText);
+  boardEl.appendChild(hero);
+
+  const groupsWrap = document.createElement("div");
+  groupsWrap.className = "favorites-groups";
+
+  favoriteGroups.forEach((group) => {
+    const groupEl = document.createElement("article");
+    groupEl.className = "favorites-group";
+    groupEl.style.setProperty("--group-accent", group.space.accent ?? "var(--accent)");
+
+    const header = document.createElement("div");
+    header.className = "favorites-group-header";
+
+    const title = document.createElement("div");
+    title.className = "favorites-group-title";
+
+    const dot = document.createElement("span");
+    dot.className = "favorites-space-dot";
+    dot.style.backgroundColor = group.space.accent ?? "var(--accent)";
+
+    const name = document.createElement("span");
+    name.textContent = group.space.name;
+    title.appendChild(dot);
+    title.appendChild(name);
+
+    const count = document.createElement("span");
+    count.className = "favorites-group-count";
+    count.textContent = `${group.cards.length}개`;
+
+    header.appendChild(title);
+    header.appendChild(count);
+    groupEl.appendChild(header);
+
+    const cards = document.createElement("div");
+    cards.className = "favorites-card-grid";
+
+    group.cards.forEach(({ card, sectionId, sectionName }) => {
+      const cardEl = createCardElement(card, sectionId, searchTerm, {
+        spaceId: group.space.id,
+        readOnly: true,
+        originLabel: `${group.space.name} · ${sectionName}`,
+        animateCards: false,
+        originAccent: group.space.accent,
+      });
+      cards.appendChild(cardEl);
+    });
+
+    groupEl.appendChild(cards);
+    groupsWrap.appendChild(groupEl);
+  });
+
+  boardEl.appendChild(groupsWrap);
+};
+
+const openCardModal = ({ sectionId, cardId = null, spaceId = null }) => {
+  const { section, card } = findCardContext(currentState, { spaceId, sectionId, cardId });
+  const fallbackSpace = getActiveSpace();
+  const fallbackSectionId = fallbackSpace?.sections?.[0]?.id ?? "";
+  const resolvedSectionId = section?.id ?? sectionId ?? fallbackSectionId;
+
+  if (!resolvedSectionId) {
     showSnackbar("먼저 공간을 만들어 주세요.");
     return;
   }
 
-  cardForm.elements.sectionId.value = sectionId ?? activeSpace.sections?.[0]?.id ?? "";
+  cardForm.elements.sectionId.value = resolvedSectionId;
   cardForm.elements.cardId.value = cardId ?? "";
 
-  if (cardId) {
-    const section = findSection(activeSpace, sectionId);
-    const card = section?.cards?.find((item) => item.id === cardId);
-    if (card) {
-      cardForm.elements.title.value = card.title;
-      cardForm.elements.type.value = card.type ?? "note";
-      cardForm.elements.note.value = card.note ?? "";
-      cardForm.elements.tags.value = card.tags?.join(", ") ?? "";
-    }
+  if (cardId && card) {
+    cardForm.elements.title.value = card.title;
+    cardForm.elements.type.value = card.type ?? "note";
+    cardForm.elements.note.value = card.note ?? "";
+    cardForm.elements.tags.value = card.tags?.join(", ") ?? "";
     cardDeleteBtn.style.display = "inline-flex";
   } else {
     cardForm.reset();
-    cardForm.elements.sectionId.value = sectionId;
+    cardForm.elements.sectionId.value = resolvedSectionId;
     cardForm.elements.type.value = "note";
     cardDeleteBtn.style.display = "none";
   }
@@ -548,10 +748,21 @@ const handleStateChange = (state) => {
   }
   currentState = state;
   renderSpaceTabs(state);
-  renderBoard(state, {
-    animateCards: metaAction !== "move-card",
-    animateColumns: metaAction !== "move-card",
-  });
+  const isFavoritesView = state.preferences.viewMode === VIEW_MODES.FAVORITES;
+  if (isFavoritesView) {
+    renderFavoritesBoard(state);
+    if (addColumnBtn) {
+      addColumnBtn.style.display = "none";
+    }
+  } else {
+    renderBoard(state, {
+      animateCards: metaAction !== "move-card",
+      animateColumns: metaAction !== "move-card",
+    });
+    if (addColumnBtn) {
+      addColumnBtn.style.display = "inline-flex";
+    }
+  }
   if (searchInput !== document.activeElement) {
     searchInput.value = state.preferences.searchTerm ?? "";
   }
@@ -726,9 +937,17 @@ spaceTabsEl.addEventListener("click", (event) => {
     return;
   }
 
+  if (tab.dataset.viewMode === VIEW_MODES.FAVORITES) {
+    updateState((draft) => {
+      draft.preferences.viewMode = VIEW_MODES.FAVORITES;
+    });
+    return;
+  }
+
   const spaceId = tab.dataset.spaceId;
   if (spaceId) {
     updateState((draft) => {
+      draft.preferences.viewMode = VIEW_MODES.SPACES;
       draft.preferences.activeSpaceId = spaceId;
     });
   }
@@ -753,7 +972,8 @@ boardEl.addEventListener("click", async (event) => {
       const sectionId = card.dataset.sectionId;
       const cardId = card.dataset.cardId;
       const action = cardActionEl.dataset.cardAction;
-      handleCardAction(action, sectionId, cardId);
+      const spaceId = card.dataset.spaceId || null;
+      handleCardAction(action, sectionId, cardId, spaceId);
     }
     return;
   }
@@ -814,19 +1034,14 @@ boardEl.addEventListener("keydown", (event) => {
   }
 });
 
-const handleCardAction = (action, sectionId, cardId) => {
-  const active = getActiveSpace();
-  if (!active) return;
-  const section = findSection(active, sectionId);
-  const card = section?.cards?.find((item) => item.id === cardId);
+const handleCardAction = (action, sectionId, cardId, spaceId = null) => {
+  const { card } = findCardContext(currentState, { spaceId, sectionId, cardId });
   if (!card) return;
 
   switch (action) {
     case "favorite":
       updateState((draft) => {
-        const space = getActiveSpace(draft);
-        const sec = findSection(space, sectionId);
-        const target = sec?.cards?.find((item) => item.id === cardId);
+        const { card: target } = findCardContext(draft, { spaceId, sectionId, cardId });
         if (target) {
           target.favorite = !target.favorite;
         }
@@ -834,23 +1049,20 @@ const handleCardAction = (action, sectionId, cardId) => {
       break;
     case "toggle-done":
       updateState((draft) => {
-        const space = getActiveSpace(draft);
-        const sec = findSection(space, sectionId);
-        const target = sec?.cards?.find((item) => item.id === cardId);
+        const { card: target } = findCardContext(draft, { spaceId, sectionId, cardId });
         if (target) {
           target.done = !target.done;
         }
       });
       break;
     case "edit":
-      openCardModal({ sectionId, cardId });
+      openCardModal({ sectionId, cardId, spaceId });
       break;
     case "delete":
       updateState((draft) => {
-        const space = getActiveSpace(draft);
-        const sec = findSection(space, sectionId);
-        if (!sec) return;
-        sec.cards = sec.cards.filter((item) => item.id !== cardId);
+        const { section } = findCardContext(draft, { spaceId, sectionId, cardId });
+        if (!section) return;
+        section.cards = section.cards.filter((item) => item.id !== cardId);
       });
       showSnackbar("카드를 삭제했습니다.");
       break;
@@ -862,10 +1074,8 @@ const handleCardAction = (action, sectionId, cardId) => {
 const handleCardPrimaryClick = (cardElement) => {
   const sectionId = cardElement.dataset.sectionId;
   const cardId = cardElement.dataset.cardId;
-  const active = getActiveSpace();
-  if (!active) return;
-  const section = findSection(active, sectionId);
-  const card = section?.cards?.find((item) => item.id === cardId);
+  const spaceId = cardElement.dataset.spaceId || null;
+  const { card } = findCardContext(currentState, { spaceId, sectionId, cardId });
   if (!card) return;
   if (card.type === "link" && card.url) {
     window.open(card.url, "_blank");
@@ -1006,7 +1216,11 @@ const openSectionLinks = async (sectionId) => {
   }
 };
 
-addColumnBtn.addEventListener("click", () => {
+addColumnBtn?.addEventListener("click", () => {
+  if (currentState?.preferences.viewMode === VIEW_MODES.FAVORITES) {
+    showSnackbar("즐겨찾기 모드에서는 보드를 추가할 수 없습니다.");
+    return;
+  }
   updateState((draft) => {
     const active = getActiveSpace(draft);
     if (!active) return;
@@ -1020,14 +1234,16 @@ cardForm.addEventListener("submit", (event) => {
   const formData = new FormData(cardForm);
   const cardId = formData.get("cardId");
   const sectionId = formData.get("sectionId");
+  const existingContext = findCardContext(currentState, { sectionId, cardId });
   const existingUrl = cardId
     ? (() => {
-        const current = getActiveSpace();
-        const section = findSection(current, sectionId);
-        const card = section?.cards?.find((item) => item.id === cardId);
+        const card = existingContext.card;
         return card?.url ?? "";
       })()
     : "";
+  const resolvedSectionId =
+    sectionId || existingContext.section?.id || getActiveSpace()?.sections?.[0]?.id || "";
+  const targetSpaceId = existingContext.space?.id ?? getActiveSpace()?.id ?? null;
 
   const payload = {
     title: formData.get("title")?.toString().trim(),
@@ -1043,13 +1259,18 @@ cardForm.addEventListener("submit", (event) => {
         .filter(Boolean) ?? [],
   };
 
-  if (!payload.title || !sectionId) return;
+  if (!payload.title || !resolvedSectionId) {
+    showSnackbar("카드 정보를 다시 확인해 주세요.");
+    return;
+  }
 
   if (cardId) {
     updateState((draft) => {
-      const active = getActiveSpace(draft);
-      const section = findSection(active, sectionId);
-      const card = section?.cards?.find((item) => item.id === cardId);
+      const { card } = findCardContext(draft, {
+        spaceId: targetSpaceId,
+        sectionId: resolvedSectionId,
+        cardId,
+      });
       if (card) {
         Object.assign(card, payload);
         card.updatedAt = new Date().toISOString();
@@ -1058,8 +1279,10 @@ cardForm.addEventListener("submit", (event) => {
     showSnackbar("카드를 수정했습니다.");
   } else {
     updateState((draft) => {
-      const active = getActiveSpace(draft);
-      const section = findSection(active, sectionId);
+      const { section } = findCardContext(draft, {
+        spaceId: targetSpaceId,
+        sectionId: resolvedSectionId,
+      });
       if (section) {
         section.cards.unshift({
           id: generateId("card"),
@@ -1081,9 +1304,9 @@ cardDeleteBtn.addEventListener("click", () => {
   const cardId = cardForm.elements.cardId.value;
   const sectionId = cardForm.elements.sectionId.value;
   if (!cardId || !sectionId) return;
+  const targetSpaceId = findCardContext(currentState, { sectionId, cardId }).space?.id ?? null;
   updateState((draft) => {
-    const active = getActiveSpace(draft);
-    const section = findSection(active, sectionId);
+    const { section } = findCardContext(draft, { spaceId: targetSpaceId, sectionId, cardId });
     if (section) {
       section.cards = section.cards.filter((card) => card.id !== cardId);
     }
