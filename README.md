@@ -1,8 +1,8 @@
 # Taboard
 
-<center>
+
 ![banner](icons/banner.png)
-</center>
+
 
 When you open a new tab in Chrome, this extension shows your tab list and a personal kanban board side by side. The left drawer lets you see and manage tabs in the current window, and the right side organizes links, notes, and todos as cards on boards by space. Data is saved in the browser with optional backup/restore via Google Drive.
 
