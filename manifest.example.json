@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Taboard",
-  "description": "Starter scaffold for the Taboard Chrome new tab experience.",
+  "description": "Taboard displays your tab list and personal Kanban board on a single screen when you open a new tab.",
   "version": "0.1.0",
   "chrome_url_overrides": {
     "newtab": "newtab/index.html"
