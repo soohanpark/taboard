@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Taboard",
+  "description": "Taboard displays your tab list and personal Kanban board on a single screen when you open a new tab.",
+  "version": "0.1.0",
+  "chrome_url_overrides": {
+    "newtab": "newtab/index.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": ["storage", "identity", "tabs", "tabGroups"],
+  "host_permissions": [
+    "https://www.googleapis.com/*",
+    "https://oauth2.googleapis.com/*",
+    "https://accounts.google.com/*"
+  ],
+  "oauth2": {
+    "client_id": "<TOKEN>.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/drive.file",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile"
+    ]
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
