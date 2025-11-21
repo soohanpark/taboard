@@ -1,32 +1,31 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-
-Taboard is a Manifest V3 extension with a flat root: `manifest.json` defines permissions plus entrypoints, `background.js` hosts light helper events, and `icons/` stores browser assets. All UI and state live in `newtab/`, where `index.html` provides the layout, `style.css` tracks the tabextend-like visual system, and the ES modules split concerns (`app.js` for UI orchestration, `state.js` for data utilities, `storage.js` for the `chrome.storage` wrapper, `drive.js` for Google Drive sync).
+- Root is a Manifest V3 extension; load the folder directly in Chrome.
+- `manifest.json` declares permissions, OAuth client ID, and the new tab override.
+- `background.js` contains lightweight service worker helpers.
+- UI lives in `newtab/`: `index.html` (layout), `style.css`, `app.js` (UI orchestration, drag/drop, tab + Drive events), `state.js` (state utilities), `storage.js` (chrome.storage wrapper + Drive metadata), `drive.js` (Google Drive OAuth + sync).
+- Assets: `icons/` holds browser icon variants. Use `manifest.example.json` as a safe template for secrets.
 
 ## Build, Test, and Development Commands
-
-No bundling step is required; load the folder directly into a Chromium browser. Typical macOS flow:
-
-```bash
-cd /path/to/taboard
-open -a "Google Chrome" --args --load-extension="$PWD"
-```
-
-Otherwise, open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, select this directory, and press **Reload** after edits. Drive-specific flows must be exercised inside Chrome because the `identity` API used in `drive.js` is unavailable elsewhere.
+- No build step. Load via `chrome://extensions` → enable **Developer mode** → **Load unpacked** pointing to the repo root (or `open -a "Google Chrome" --args --load-extension="$PWD"` on macOS).
+- Formatting: `npx prettier@latest newtab/*.js`.
+- Manual verification happens inside Chrome with a fresh profile.
 
 ## Coding Style & Naming Conventions
-
-Source files use modern ES modules, two-space indentation, and semicolons. Favor descriptive camelCase names for variables (`driveModalEl`, `schedulePersist`) and kebab-case for DOM IDs/data attributes to stay aligned with `index.html`. Keep DOM-heavy logic in `newtab/app.js`, pure utilities in `newtab/state.js`, and persistence adapters isolated in `newtab/storage.js`. Run `npx prettier@latest newtab/*.js` (or the equivalent editor integration) before committing multi-line edits to keep formatting consistent.
+- ES modules, two-space indentation, semicolons.
+- Descriptive camelCase for variables (`driveModalEl`), kebab-case for DOM IDs/data attributes to match `index.html`.
+- Keep DOM-heavy logic in `newtab/app.js`; pure helpers in `state.js`; persistence concerns in `storage.js`/`drive.js`.
+- Run Prettier on multi-line edits; keep assets ASCII unless otherwise necessary.
 
 ## Testing Guidelines
-
-There is no automated test harness; rely on manual verification inside a fresh Chrome profile. Validate the left hover tab list, kanban CRUD operations, drag-and-drop, snackbar messaging, and Google Drive backup/restore each run. When migrations or default data change, clear `chrome.storage.local` via the extension’s DevTools console so you cover cold-start behavior.
+- No automated tests. Manually check: left tab drawer (list/search/drag to board, close), space/board/card CRUD, drag-and-drop reorder/move, search input + `⌘/Ctrl + K`, favorites (★) view, board “x sites” button opens tabs/group fallback, snackbar messaging, Google Drive connect/sync/disconnect (5–30 min intervals).
+- Clear `chrome.storage.local` via DevTools console when testing cold-start or migration behaviors.
 
 ## Commit & Pull Request Guidelines
-
-With no existing Git history, adopt Conventional Commits (`feat: drive reconnect UX`, `fix: prevent duplicate space IDs`) so changelog generation stays trivial. Every PR should include a concise summary, linked issue or task ID, manual verification notes (e.g., “loaded via chrome://extensions, created cards, synced Drive”), and UI screenshots or short Loom/GIF snippets for visible tweaks. Keep PRs scoped to a single feature or bugfix to simplify review and rollback.
+- Use Conventional Commits (e.g., `feat: drive reconnect UX`, `fix: prevent duplicate space IDs`).
+- PRs should include: short summary, linked issue/task, manual verification notes (e.g., “loaded unpacked, created cards, synced Drive”), and UI screenshots/GIF for visual changes. Keep scope to a single feature/bugfix.
 
 ## Security & Configuration Tips
-
-Do not commit real Google OAuth Client IDs or refresh tokens; share them through 1Password or issue comments if collaboration is required. Describe any new permissions in `manifest.json` inside the PR so reviewers can assess the blast radius.
+- Do not commit real Google OAuth Client IDs or tokens; keep them local using `manifest.example.json` as a base.
+- Document any permission changes in `manifest.json` so reviewers can assess impact (tabs, tabGroups, identity, host permissions).
