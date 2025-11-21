@@ -151,11 +151,11 @@ const scheduleDriveSync = (state, immediate = false) => {
     try {
       await pushToDrive(state);
       if (immediate) {
-        showSnackbar("Google Drive 백업 완료");
+        showSnackbar("Google Drive backup complete");
       }
     } catch (error) {
       console.error(error);
-      showSnackbar("Drive 동기화 실패: " + error.message);
+      showSnackbar("Drive sync failed: " + error.message);
     }
   };
 
@@ -306,7 +306,7 @@ const createCardElement = (card, sectionId, searchTerm, options = {}) => {
     doneButton.type = "button";
     doneButton.className = "card-floating-button card-done-button";
     doneButton.dataset.cardAction = "toggle-done";
-    doneButton.title = card.done ? "완료 취소" : "완료 처리";
+    doneButton.title = card.done ? "Mark incomplete" : "Mark complete";
     doneButton.textContent = card.done ? "✔" : "☐";
     if (card.done) {
       doneButton.classList.add("is-done");
@@ -318,7 +318,7 @@ const createCardElement = (card, sectionId, searchTerm, options = {}) => {
   editIcon.type = "button";
   editIcon.className = "card-floating-button";
   editIcon.dataset.cardAction = "edit";
-  editIcon.title = "편집";
+  editIcon.title = "Edit";
   editIcon.textContent = "✎";
   floating.appendChild(editIcon);
 
@@ -326,7 +326,7 @@ const createCardElement = (card, sectionId, searchTerm, options = {}) => {
   favoriteIcon.type = "button";
   favoriteIcon.className = "card-floating-button card-favorite-button";
   favoriteIcon.dataset.cardAction = "favorite";
-  favoriteIcon.title = card.favorite ? "즐겨찾기 해제" : "즐겨찾기";
+  favoriteIcon.title = card.favorite ? "Unfavorite" : "Favorite";
   favoriteIcon.textContent = card.favorite ? "★" : "☆";
   if (card.favorite) {
     favoriteIcon.classList.add("is-active");
@@ -337,7 +337,7 @@ const createCardElement = (card, sectionId, searchTerm, options = {}) => {
   deleteIcon.type = "button";
   deleteIcon.className = "card-floating-button";
   deleteIcon.dataset.cardAction = "delete";
-  deleteIcon.title = "삭제";
+  deleteIcon.title = "Delete";
   deleteIcon.textContent = "×";
   floating.appendChild(deleteIcon);
 
@@ -439,7 +439,7 @@ const attachDropTargets = (cardListEl) => {
         const parsed = JSON.parse(tabPayload);
         addTabCardToSection(cardListEl.dataset.sectionId, parsed);
       } catch (error) {
-        console.warn("드롭 데이터를 파싱할 수 없습니다.", error);
+        console.warn("Could not parse drop data.", error);
       }
       return;
     }
@@ -490,7 +490,7 @@ const renderBoard = (state, options = {}) => {
   const space = getActiveSpace(state);
   if (!space) {
     const placeholder = document.createElement("p");
-    placeholder.textContent = "공간을 먼저 만들어 주세요.";
+    placeholder.textContent = "Create a space first.";
     boardEl.appendChild(placeholder);
     return;
   }
@@ -499,7 +499,7 @@ const renderBoard = (state, options = {}) => {
 
   if (!space.sections.length) {
     const placeholder = document.createElement("p");
-    placeholder.textContent = "보드를 추가해보세요.";
+    placeholder.textContent = "Add a board to get started.";
     boardEl.appendChild(placeholder);
     return;
   }
@@ -535,7 +535,7 @@ const renderBoard = (state, options = {}) => {
     deleteBtn.type = "button";
     deleteBtn.className = "column-delete";
     deleteBtn.dataset.columnDelete = section.id;
-    deleteBtn.title = "보드 삭제";
+    deleteBtn.title = "Delete board";
     deleteBtn.textContent = "×";
     const headerControls = document.createElement("div");
     headerControls.className = "column-controls";
@@ -570,7 +570,7 @@ const renderBoard = (state, options = {}) => {
     addCardBtn.className = "add-card";
     addCardBtn.dataset.sectionId = section.id;
     addCardBtn.textContent = "+";
-    addCardBtn.setAttribute("aria-label", "카드 추가");
+    addCardBtn.setAttribute("aria-label", "Add card");
     column.appendChild(addCardBtn);
     boardEl.appendChild(column);
   });
@@ -578,7 +578,7 @@ const renderBoard = (state, options = {}) => {
   if (addColumnBtn) {
     addColumnBtn.classList.add("add-column-tile");
     addColumnBtn.textContent = "+";
-    addColumnBtn.setAttribute("aria-label", "보드 추가");
+    addColumnBtn.setAttribute("aria-label", "Add board");
     addColumnBtn.style.display = "inline-flex";
     boardEl.appendChild(addColumnBtn);
   }
@@ -614,13 +614,13 @@ const renderFavoritesBoard = (state) => {
     emptyIcon.textContent = "☆";
     const emptyTitle = document.createElement("p");
     emptyTitle.textContent = isFiltering
-      ? "검색어에 맞는 즐겨찾기 카드가 없습니다."
-      : "즐겨찾기한 카드가 없습니다.";
+      ? "No favorited cards match your search."
+      : "No favorited cards yet.";
     const emptyHint = document.createElement("p");
     emptyHint.className = "favorites-empty-hint";
     emptyHint.textContent = isFiltering
-      ? "검색어를 바꾸거나 즐겨찾기 표시를 추가해 보세요."
-      : "카드 우측 상단의 별을 눌러 즐겨찾기에 추가하세요.";
+      ? "Try a different search term or add some favorites."
+      : "Use the star on a card to add it to favorites.";
     empty.appendChild(emptyIcon);
     empty.appendChild(emptyTitle);
     empty.appendChild(emptyHint);
@@ -637,10 +637,10 @@ const renderFavoritesBoard = (state) => {
   heroText.className = "favorites-hero-text";
   const heroTitle = document.createElement("p");
   heroTitle.className = "favorites-hero-title";
-  heroTitle.textContent = "즐겨찾기 모음";
+  heroTitle.textContent = "Favorites hub";
   const heroSubtitle = document.createElement("p");
   heroSubtitle.className = "favorites-hero-subtitle";
-  heroSubtitle.textContent = "가장 중요한 카드들을 한곳에서 바로 확인하세요.";
+  heroSubtitle.textContent = "See your most important cards in one place.";
   heroText.appendChild(heroTitle);
   heroText.appendChild(heroSubtitle);
   hero.appendChild(heroIcon);
@@ -672,7 +672,7 @@ const renderFavoritesBoard = (state) => {
 
     const count = document.createElement("span");
     count.className = "favorites-group-count";
-    count.textContent = `${group.cards.length}개`;
+    count.textContent = group.cards.length === 1 ? "1 card" : `${group.cards.length} cards`;
 
     header.appendChild(title);
     header.appendChild(count);
@@ -706,7 +706,7 @@ const openCardModal = ({ sectionId, cardId = null, spaceId = null }) => {
   const resolvedSectionId = section?.id ?? sectionId ?? fallbackSectionId;
 
   if (!resolvedSectionId) {
-    showSnackbar("먼저 공간을 만들어 주세요.");
+    showSnackbar("Create a space first.");
     return;
   }
 
@@ -815,7 +815,7 @@ const safeTabsQuery = (query) =>
     }
     chrome.tabs.query(query, (tabs) => {
       if (chrome.runtime?.lastError) {
-        console.warn("tabs.query 실패", chrome.runtime.lastError);
+        console.warn("tabs.query failed", chrome.runtime.lastError);
         resolve([]);
         return;
       }
@@ -893,7 +893,7 @@ const renderOpenTabs = () => {
     closeBtn.type = "button";
     closeBtn.className = "tab-close";
     closeBtn.dataset.closeTabId = tab.id;
-    closeBtn.title = "탭 닫기";
+    closeBtn.title = "Close tab";
     closeBtn.textContent = "×";
     item.appendChild(closeBtn);
 
@@ -933,7 +933,7 @@ const registerTabObservers = () => {
       try {
         unsubscribe();
       } catch (error) {
-        console.warn("탭 리스너 정리 중 오류", error);
+        console.warn("Error while cleaning up tab listeners", error);
       }
     }
   });
@@ -1019,7 +1019,9 @@ boardEl.addEventListener("click", async (event) => {
   const deleteColumnEl = event.target.closest("[data-column-delete]");
   if (deleteColumnEl) {
     const sectionId = deleteColumnEl.dataset.columnDelete;
-    const confirmed = await openConfirm("선택한 보드를 삭제할까요? 포함된 카드도 함께 삭제됩니다.");
+    const confirmed = await openConfirm(
+      "Delete this board? Cards inside will also be removed."
+    );
     if (!confirmed) {
       return;
     }
@@ -1028,7 +1030,7 @@ boardEl.addEventListener("click", async (event) => {
       if (!active) return;
       active.sections = active.sections.filter((section) => section.id !== sectionId);
     });
-    showSnackbar("보드를 삭제했습니다.");
+    showSnackbar("Board deleted.");
     return;
   }
 });
@@ -1036,7 +1038,7 @@ boardEl.addEventListener("click", async (event) => {
 boardEl.addEventListener("focusout", (event) => {
   if (event.target.classList?.contains("column-title")) {
     const sectionId = event.target.dataset.sectionId;
-    const newName = event.target.textContent.trim() || "이름 없는 보드";
+    const newName = event.target.textContent.trim() || "Untitled board";
     event.target.textContent = newName;
     updateState((draft) => {
       const active = getActiveSpace(draft);
@@ -1084,7 +1086,7 @@ const handleCardAction = (action, sectionId, cardId, spaceId = null) => {
         if (!section) return;
         section.cards = section.cards.filter((item) => item.id !== cardId);
       });
-      showSnackbar("카드를 삭제했습니다.");
+      showSnackbar("Card deleted.");
       break;
     default:
       break;
@@ -1121,7 +1123,7 @@ const addTabCardToSection = (sectionId, tabPayload) => {
       updatedAt: new Date().toISOString(),
     });
   });
-  showSnackbar("탭을 카드로 추가했습니다.");
+  showSnackbar("Tab saved as a card.");
 };
 
 const getCurrentWindowId = () =>
@@ -1194,7 +1196,7 @@ const openSectionLinks = async (sectionId) => {
   if (!section) return;
   const links = section.cards.filter((card) => card.url);
   if (!links.length) {
-    showSnackbar("열 수 있는 링크 카드가 없습니다.");
+    showSnackbar("No link cards to open.");
     return;
   }
   if (
@@ -1204,7 +1206,7 @@ const openSectionLinks = async (sectionId) => {
     !chrome?.windows?.getCurrent
   ) {
     links.forEach((card) => window.open(card.url, "_blank"));
-    showSnackbar("브라우저가 탭 그룹 기능을 지원하지 않아 새 탭으로 열었습니다.");
+    showSnackbar("Your browser doesn't support tab groups; opened in new tabs.");
     return;
   }
 
@@ -1222,31 +1224,33 @@ const openSectionLinks = async (sectionId) => {
       }
     }
     if (!tabIds.length) {
-      showSnackbar("새 탭을 열 수 없었습니다.");
+      showSnackbar("Could not open new tabs.");
       return;
     }
     const groupId = await chromeTabsGroup(tabIds);
     await chromeTabGroupsUpdate(groupId, { title: section.name });
     chrome.tabs.update(tabIds[0], { active: true });
-    showSnackbar(`${links.length}개의 링크를 현재 창에서 그룹으로 열었습니다.`);
+    showSnackbar(
+      `Opened ${links.length} link ${links.length === 1 ? "card" : "cards"} as a group in this window.`
+    );
   } catch (error) {
     console.error("Failed to open section links as group", error);
     links.forEach((card) => window.open(card.url, "_blank"));
-    showSnackbar("탭 그룹 생성에 실패하여 새 탭으로 열었습니다.");
+    showSnackbar("Failed to create a tab group; opened in new tabs instead.");
   }
 };
 
 addColumnBtn?.addEventListener("click", () => {
   if (currentState?.preferences.viewMode === VIEW_MODES.FAVORITES) {
-    showSnackbar("즐겨찾기 모드에서는 보드를 추가할 수 없습니다.");
+    showSnackbar("You can't add boards while in Favorites view.");
     return;
   }
   updateState((draft) => {
     const active = getActiveSpace(draft);
     if (!active) return;
-    active.sections.push({ id: generateId("section"), name: "새 보드", cards: [] });
+    active.sections.push({ id: generateId("section"), name: "New board", cards: [] });
   });
-  showSnackbar("보드를 추가했습니다.");
+  showSnackbar("Board added.");
 });
 
 boardEl.addEventListener("contextmenu", (event) => {
@@ -1289,12 +1293,12 @@ cardForm.addEventListener("submit", (event) => {
   };
 
   if (!payload.title || !resolvedSectionId) {
-    showSnackbar("카드 정보를 다시 확인해 주세요.");
+    showSnackbar("Please double-check the card information.");
     return;
   }
 
   if (payload.type === "link" && !payload.url) {
-    showSnackbar("링크를 입력해 주세요.");
+    showSnackbar("Please enter a link.");
     return;
   }
 
@@ -1310,7 +1314,7 @@ cardForm.addEventListener("submit", (event) => {
         card.updatedAt = new Date().toISOString();
       }
     });
-    showSnackbar("카드를 수정했습니다.");
+    showSnackbar("Card updated.");
   } else {
     updateState((draft) => {
       const { section } = findCardContext(draft, {
@@ -1328,7 +1332,7 @@ cardForm.addEventListener("submit", (event) => {
         });
       }
     });
-    showSnackbar("카드를 추가했습니다.");
+    showSnackbar("Card added.");
   }
 
   closeModal(cardModalEl);
@@ -1346,7 +1350,7 @@ cardDeleteBtn.addEventListener("click", () => {
     }
   });
   closeModal(cardModalEl);
-  showSnackbar("카드를 삭제했습니다.");
+  showSnackbar("Card deleted.");
 });
 
 cardModalEl.addEventListener("click", (event) => {
@@ -1367,14 +1371,14 @@ spaceForm.addEventListener("submit", (event) => {
       const space = draft.spaces.find((item) => item.id === spaceId);
       if (space) space.name = name;
     });
-    showSnackbar("공간을 수정했습니다.");
+    showSnackbar("Space updated.");
   } else {
     const newSpaceId = generateId("space");
     updateState((draft) => {
       draft.spaces.push({ id: newSpaceId, name, accent: "#2563eb", sections: [] });
       draft.preferences.activeSpaceId = newSpaceId;
     });
-    showSnackbar("새 공간을 만들었습니다.");
+    showSnackbar("Space created.");
   }
 
   closeModal(spaceModalEl);
@@ -1384,7 +1388,7 @@ spaceDeleteBtn.addEventListener("click", () => {
   const spaceId = spaceForm.elements.spaceId.value;
   if (!spaceId || !currentState) return;
   if (currentState.spaces.length <= 1) {
-    showSnackbar("최소 한 개의 공간이 필요합니다.");
+    showSnackbar("At least one space is required.");
     return;
   }
   updateState((draft) => {
@@ -1394,7 +1398,7 @@ spaceDeleteBtn.addEventListener("click", () => {
     }
   });
   closeModal(spaceModalEl);
-  showSnackbar("공간을 삭제했습니다.");
+  showSnackbar("Space deleted.");
 });
 
 spaceModalEl.addEventListener("click", (event) => {
@@ -1472,13 +1476,13 @@ driveConnectBtn.addEventListener("click", async () => {
         hasPulledDriveState = true;
       } catch (error) {
         console.error("Failed to pull Drive data", error);
-        showSnackbar("Drive 데이터 불러오기 실패: " + error.message);
+        showSnackbar("Failed to load Drive data: " + error.message);
       }
     }
-    showSnackbar("Google Drive와 연결되었습니다.");
+    showSnackbar("Connected to Google Drive.");
     scheduleDriveSync(getState(), true);
   } catch (error) {
-    showSnackbar("Drive 연결 실패: " + error.message);
+    showSnackbar("Failed to connect to Drive: " + error.message);
   }
 });
 
@@ -1486,12 +1490,12 @@ driveMenuSyncBtn?.addEventListener("click", async (event) => {
   event.preventDefault();
   event.stopPropagation();
   if (getDriveSnapshot().status !== "connected") return;
-  showSnackbar("Google Drive 수동 동기화 중...");
+  showSnackbar("Manually syncing with Google Drive...");
   try {
     await runDriveSync();
-    showSnackbar("Drive와 수동 동기화를 완료했습니다.");
+    showSnackbar("Manual sync with Drive completed.");
   } catch (error) {
-    showSnackbar("Drive 동기화 실패: " + error.message);
+    showSnackbar("Drive sync failed: " + error.message);
   }
 });
 
@@ -1500,7 +1504,7 @@ driveMenuDisconnectBtn?.addEventListener("click", async (event) => {
   await disconnectDrive();
   stopDriveBackgroundSync();
   hasPulledDriveState = false;
-  showSnackbar("Google Drive 연결 해제됨.");
+  showSnackbar("Disconnected from Google Drive.");
 });
 
 tabFilterInput.addEventListener("input", (event) => {

@@ -4,41 +4,41 @@
 ![banner](icons/banner.png)
 </center>
 
-Chrome에서 새 탭을 열면 탭 목록과 나만의 칸반 보드를 한 화면에 보여주는 확장 프로그램입니다. 왼쪽에서는 현재 창의 탭을 한눈에 보고 관리하고, 오른쪽에서는 공간별 보드에 링크·노트·할 일을 카드로 정리합니다. 기본 저장은 브라우저에, 선택적으로 Google Drive로 백업·복원할 수 있습니다.
+When you open a new tab in Chrome, this extension shows your tab list and a personal kanban board side by side. The left drawer lets you see and manage tabs in the current window, and the right side organizes links, notes, and todos as cards on boards by space. Data is saved in the browser with optional backup/restore via Google Drive.
 
-## 무엇을 할 수 있나요?
+## What can you do?
 
-- 탭 서랍: 현재 창의 탭을 목록으로 확인, 검색, 클릭해 전환하거나 닫기. 탭을 드래그해 보드에 링크 카드로 저장.
-- 공간·보드·카드: Space → Board(Column) → Card 구조. 카드 유형(링크·노트·할 일), 태그, 즐겨찾기, 완료 표시 지원. 드래그앤드롭으로 카드 이동·정렬.
-- 즐겨찾기 뷰: 상단 ★ 탭에서 즐겨찾기한 카드만 모아보기.
-- 일괄 열기: 각 보드의 `x sites` 버튼으로 해당 보드의 링크 카드를 새 탭 그룹으로 한 번에 열기.
-- 빠른 검색/단축키: 상단 검색창으로 카드 필터링, `⌘/Ctrl + K`로 검색창 포커스, `Esc`로 모달 닫기.
-- 백업/복원: `chrome.storage.local`에 자동 저장. Google Drive에 연결하면 `TaboardSync.json`으로 수동·자동(30분 간격) 동기화.
+- Tab drawer: view/search the current window tabs, click to switch or close. Drag tabs to the board to save them as link cards.
+- Spaces/boards/cards: Space → Board (column) → Card structure. Supports card types (link/note/todo), tags, favorites, done state, and drag-and-drop reordering.
+- Favorites view: the top ★ tab shows only favorited cards.
+- Open all: each board’s `x sites` button opens its link cards at once in a new tab group.
+- Quick search/shortcuts: filter cards with the top search box, focus it with `⌘/Ctrl + K`, close modals with `Esc`.
+- Backup/restore: auto-saves to `chrome.storage.local`. Connect Google Drive to sync manually or automatically every 30 minutes via `TaboardSync.json`.
 
-## 처음 사용하기
+## Getting started
 
-- 상단 탭 바의 `+` 버튼으로 공간을 추가하고, 우클릭으로 이름을 수정/삭제할 수 있습니다.
-- 각 공간 안에서 `+` 버튼으로 새 보드를 만들고, 보드 안의 `+`로 카드(링크·노트·할 일)를 추가합니다.
-- 왼쪽 탭 서랍에서 탭을 드래그해 카드로 저장하거나, 카드에 링크가 있으면 클릭하여 새 탭으로 엽니다.
-- 오른쪽 상단 검색창으로 카드 내용을 빠르게 필터링하고, ★ 탭에서 즐겨찾기만 모아볼 수 있습니다.
-- 보드 헤더의 `x sites` 버튼을 누르면 해당 보드에 있는 링크 카드를 새 탭 그룹으로 한 번에 엽니다.
+- Add a space with the `+` button in the top tab bar; right-click to rename or delete it.
+- Inside each space, use `+` to create a board, then `+` inside a board to add cards (link/note/todo).
+- Drag tabs from the left drawer to save them as cards, or click a card’s link to open it in a new tab.
+- Use the top-right search box to quickly filter cards, and the ★ tab to see only favorites.
+- The board header’s `x sites` button opens all link cards in that board as a new tab group.
 
-## Google Drive 동기화 (선택)
+## Google Drive sync (optional)
 
-1) 새 탭 화면 오른쪽 상단의 **Google Drive Sync** 버튼을 클릭합니다.  
-2) Chrome 팝업에서 Google 계정을 선택하고 권한을 승인하면 Drive에 `TaboardSync.json` 파일이 생성됩니다.  
-3) 메뉴에서 **수동 동기화**를 눌러 즉시 백업/복원하거나, 연결 상태에서 30분마다 자동 백업이 실행됩니다.  
-4) 연결 해제는 메뉴의 **연결 해제**를 누르면 됩니다.
+1) Click the **Google Drive Sync** button in the top right of the new tab page.  
+2) In the Chrome popup, choose your Google account and approve permissions; Drive will create a `TaboardSync.json` file.  
+3) Use **Manual sync** in the menu to back up/restore immediately, or keep it connected to auto-back up every 30 minutes.  
+4) Choose **Disconnect** in the menu to unlink Drive.
 
-※ 회사 정책 등으로 Google 로그인 팝업이 차단되어 있으면 Drive 동기화를 사용할 수 없습니다. 기본 기능은 로그인 없이 정상 동작합니다.
+Note: If a company policy blocks Google sign-in popups, Drive sync will be unavailable. Core features work without signing in.
 
-## 권한 안내
+## Permissions
 
-- `tabs`/`tabGroups`: 현재 창의 탭 목록을 보여주고, 여러 링크를 새 탭 그룹으로 열기 위해 사용합니다.
-- `storage`: 보드와 카드 데이터를 브라우저에 저장합니다.
-- `identity` 및 Google API 관련 host 권한: Google Drive 백업/복원을 위해 OAuth 인증 시에만 사용합니다.
+- `tabs`/`tabGroups`: show the current window’s tab list and open multiple links as a new tab group.
+- `storage`: store board and card data in the browser.
+- `identity` and Google API host permissions: used only for OAuth when backing up/restoring with Google Drive.
 
-## 문제가 생기면
+## Troubleshooting
 
-- 새 탭 화면이 보이지 않으면 `chrome://extensions`에서 Taboard의 **Reload**를 눌러주세요.
-- Drive 동기화 오류가 반복되면 확장 프로그램을 다시 로드하거나, 메뉴에서 연결 해제 후 다시 연결해보세요.
+- If the new tab page doesn’t appear, click **Reload** for Taboard in `chrome://extensions`.
+- If Drive sync errors persist, reload the extension or disconnect and reconnect it from the menu.

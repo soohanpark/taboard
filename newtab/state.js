@@ -9,10 +9,10 @@ const sampleCards = () => [
   {
     id: generateId("card"),
     type: "link",
-    title: "읽을 거리 모음",
-    note: "보드 헤더의 sites 버튼으로 한 번에 열기",
+    title: "Reading list",
+    note: "Open everything at once with the board header's sites button",
     url: "https://example.com/productivity",
-    tags: ["링크", "읽기"],
+    tags: ["links", "reading"],
     color: "#2563eb",
     favorite: true,
     done: false,
@@ -22,8 +22,8 @@ const sampleCards = () => [
   {
     id: generateId("card"),
     type: "todo",
-    title: "오늘의 집중 작업",
-    note: "⌘/Ctrl + K로 검색창 바로 열기",
+    title: "Focus tasks for today",
+    note: "Jump straight to the search bar with ⌘/Ctrl + K",
     done: false,
     tags: ["focus"],
     color: "#6366f1",
@@ -34,8 +34,8 @@ const sampleCards = () => [
   {
     id: generateId("card"),
     type: "note",
-    title: "즐겨찾기 테스트",
-    note: "별을 눌러 ★ 탭에서 모아보기",
+    title: "Favorites test",
+    note: "Press the star to see it in the ★ tab",
     tags: ["tips"],
     favorite: true,
     color: "#f472b6",
@@ -54,17 +54,17 @@ export const createDefaultState = () => {
   const createDefaultSections = () => [
     {
       id: generateId("section"),
-      name: "오늘 할 일",
+      name: "Today's tasks",
       cards: sampleCards(),
     },
     {
       id: generateId("section"),
-      name: "링크 & 자료",
+      name: "Links & resources",
       cards: [],
     },
     {
       id: generateId("section"),
-      name: "아이디어",
+      name: "Ideas",
       cards: [],
     },
   ];
@@ -138,12 +138,12 @@ const normalizeState = (state) => {
     sections: Array.isArray(space.sections)
       ? space.sections.map((section) => ({
           id: section.id ?? generateId("section"),
-          name: section.name ?? "새 섹션",
+          name: section.name ?? "New section",
           cards: Array.isArray(section.cards)
             ? section.cards.map((card) => ({
                 id: card.id ?? generateId("card"),
                 type: card.type ?? "link",
-                title: card.title ?? "제목 없음",
+                title: card.title ?? "Untitled",
                 note: card.note ?? "",
                 url: card.url ?? "",
                 tags: Array.isArray(card.tags) ? card.tags : [],

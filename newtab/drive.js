@@ -5,7 +5,7 @@ const DRIVE_API = "https://www.googleapis.com/drive/v3/files";
 const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files";
 const USER_INFO_ENDPOINT = "https://www.googleapis.com/oauth2/v2/userinfo";
 
-// TODO: Google Cloud 콘솔에서 OAuth 클라이언트 ID를 생성한 뒤 manifest.json의 oauth2.client_id 값을 실제 값으로 교체하세요.
+// TODO: Create an OAuth client ID in Google Cloud Console, then replace manifest.json oauth2.client_id with the real value.
 
 const listeners = new Set();
 let driveState = {

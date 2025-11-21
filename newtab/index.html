@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -24,7 +24,7 @@
         </div>
         <div class="drawer-list" id="tab-list"></div>
         <div class="drawer-filter">
-          <input type="search" id="tab-filter" placeholder="탭 검색" />
+          <input type="search" id="tab-filter" placeholder="Search tabs" />
         </div>
       </aside>
 
@@ -36,15 +36,19 @@
               <input
                 type="search"
                 id="search-input"
-                placeholder="카드 검색"
-                aria-label="카드 검색"
+                placeholder="Search cards"
+                aria-label="Search cards"
               />
-              <button class="icon-button search-button" id="search-focus" title="검색 (⌘/Ctrl + K)">
+              <button
+                class="icon-button search-button"
+                id="search-focus"
+                title="Search (⌘/Ctrl + K)"
+              >
                 🔍
               </button>
             </div>
             <div class="drive-control" id="drive-control">
-              <button class="icon-button drive-button" id="drive-connect" title="Google Drive 연결">
+              <button class="icon-button drive-button" id="drive-connect" title="Connect Google Drive">
                 <svg viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg">
                   <path
                     d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z"
@@ -75,10 +79,10 @@
               </button>
               <div class="drive-menu" id="drive-menu" role="menu" aria-label="Drive options">
                 <button type="button" class="drive-menu-item" id="drive-menu-sync">
-                  수동 동기화
+                  Manual sync
                 </button>
                 <button type="button" class="drive-menu-item danger" id="drive-menu-disconnect">
-                  연결 해제
+                  Disconnect
                 </button>
               </div>
             </div>
@@ -100,7 +104,7 @@
 
         <section class="board-wrapper">
           <div class="board" id="board"></div>
-          <button class="add-column" id="add-column" aria-label="보드 추가">+</button>
+          <button class="add-column" id="add-column" aria-label="Add board">+</button>
         </section>
       </main>
     </div>
@@ -109,39 +113,39 @@
       <div class="modal-backdrop" data-close="card"></div>
       <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <header>
-          <h3 id="modal-title">카드</h3>
+          <h3 id="modal-title">Card</h3>
         </header>
         <form id="card-form">
           <input type="hidden" name="cardId" />
           <input type="hidden" name="sectionId" />
           <label>
-            <span>제목</span>
+            <span>Title</span>
             <input name="title" required />
           </label>
           <label>
-            <span>카드 유형</span>
+            <span>Card type</span>
             <select name="type">
-              <option value="link">링크</option>
-              <option value="note">노트</option>
-              <option value="todo">할 일</option>
+              <option value="link">Link</option>
+              <option value="note">Note</option>
+              <option value="todo">Todo</option>
             </select>
           </label>
           <label data-card-field="url">
-            <span>링크</span>
+            <span>Link</span>
             <input name="url" type="url" placeholder="https://example.com" />
           </label>
           <label data-card-field="note">
-            <span>설명</span>
+            <span>Description</span>
             <textarea name="note" rows="3"></textarea>
           </label>
           <label>
-            <span>태그 (쉼표 분리)</span>
+            <span>Tags (comma separated)</span>
             <input name="tags" placeholder="design, reading" />
           </label>
           <div class="form-actions">
-            <button type="button" class="ghost-button" data-close="card">취소</button>
-            <button type="button" class="ghost-button" data-delete-card>삭제</button>
-            <button type="submit">저장</button>
+            <button type="button" class="ghost-button" data-close="card">Cancel</button>
+            <button type="button" class="ghost-button" data-delete-card>Delete</button>
+            <button type="submit">Save</button>
           </div>
         </form>
       </div>
@@ -151,18 +155,18 @@
       <div class="modal-backdrop" data-close="space"></div>
       <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="space-modal-title">
         <header>
-          <h3 id="space-modal-title">공간</h3>
+          <h3 id="space-modal-title">Space</h3>
         </header>
         <form id="space-form">
           <input type="hidden" name="spaceId" />
           <label>
-            <span>공간 이름</span>
-            <input name="name" placeholder="예: WORK" required />
+            <span>Space name</span>
+            <input name="name" placeholder="e.g., WORK" required />
           </label>
           <div class="form-actions">
-            <button type="button" class="ghost-button" data-close="space">취소</button>
-            <button type="button" class="ghost-button" data-delete-space>삭제</button>
-            <button type="submit">저장</button>
+            <button type="button" class="ghost-button" data-close="space">Cancel</button>
+            <button type="button" class="ghost-button" data-delete-space>Delete</button>
+            <button type="submit">Save</button>
           </div>
         </form>
       </div>
@@ -177,12 +181,12 @@
         aria-labelledby="confirm-modal-title"
       >
         <header>
-          <h3 id="confirm-modal-title">확인</h3>
+          <h3 id="confirm-modal-title">Confirm</h3>
         </header>
         <p id="confirm-message"></p>
         <div class="form-actions">
-          <button type="button" class="ghost-button" id="confirm-cancel">취소</button>
-          <button type="button" id="confirm-accept">확인</button>
+          <button type="button" class="ghost-button" id="confirm-cancel">Cancel</button>
+          <button type="button" id="confirm-accept">Confirm</button>
         </div>
       </div>
     </section>
