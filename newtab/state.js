@@ -20,17 +20,6 @@ const sampleCards = () => [
   },
   {
     id: generateId("card"),
-    type: "link",
-    title: "Product design inspiration",
-    url: "https://www.tabextend.com/guide",
-    tags: ["design"],
-    color: "#0ea5e9",
-    favorite: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: generateId("card"),
     type: "note",
     title: "빠른 메모",
     note: "회의에서 나온 아이디어 정리",
@@ -88,6 +77,7 @@ export const createDefaultState = () => {
       activeSpaceId: focusSpaceId,
       searchTerm: "",
       captureSectionId: focusSections[0].id,
+      viewMode: "spaces",
     },
     lastUpdated: new Date().toISOString(),
   };
@@ -105,12 +95,16 @@ const normalizeState = (state) => {
       activeSpaceId: next.spaces[0]?.id ?? null,
       searchTerm: "",
       captureSectionId: next.spaces[0]?.sections?.[0]?.id ?? null,
+      viewMode: "spaces",
     };
   }
   if (!next.preferences.activeSpaceId && next.spaces[0]) {
     next.preferences.activeSpaceId = next.spaces[0].id;
   }
   next.preferences.searchTerm = next.preferences.searchTerm ?? "";
+  if (next.preferences.viewMode !== "favorites") {
+    next.preferences.viewMode = "spaces";
+  }
   const activeSpace = next.spaces.find((space) => space.id === next.preferences.activeSpaceId);
   if (!next.preferences.captureSectionId) {
     next.preferences.captureSectionId =
