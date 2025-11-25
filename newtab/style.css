@@ -402,6 +402,13 @@ body {
   align-items: stretch;
 }
 
+.board.board-empty {
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
 .board.favorites-view {
   display: flex;
   flex-direction: column;

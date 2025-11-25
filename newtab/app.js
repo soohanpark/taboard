@@ -484,8 +484,18 @@ const moveCard = (cardId, fromSectionId, toSectionId, targetIndex) => {
   );
 };
 
+const appendAddBoardButton = () => {
+  if (!addColumnBtn) return;
+  addColumnBtn.classList.add("add-column-tile");
+  addColumnBtn.textContent = "+";
+  addColumnBtn.setAttribute("aria-label", "Add board");
+  addColumnBtn.style.display = "inline-flex";
+  boardEl.appendChild(addColumnBtn);
+};
+
 const renderBoard = (state, options = {}) => {
   boardEl.classList.remove("favorites-view");
+  boardEl.classList.remove("board-empty");
   boardEl.innerHTML = "";
   const space = getActiveSpace(state);
   if (!space) {
@@ -498,9 +508,8 @@ const renderBoard = (state, options = {}) => {
   const searchTerm = state.preferences.searchTerm?.trim();
 
   if (!space.sections.length) {
-    const placeholder = document.createElement("p");
-    placeholder.textContent = "Add a board to get started.";
-    boardEl.appendChild(placeholder);
+    boardEl.classList.add("board-empty");
+    appendAddBoardButton();
     return;
   }
 
@@ -575,13 +584,7 @@ const renderBoard = (state, options = {}) => {
     boardEl.appendChild(column);
   });
 
-  if (addColumnBtn) {
-    addColumnBtn.classList.add("add-column-tile");
-    addColumnBtn.textContent = "+";
-    addColumnBtn.setAttribute("aria-label", "Add board");
-    addColumnBtn.style.display = "inline-flex";
-    boardEl.appendChild(addColumnBtn);
-  }
+  appendAddBoardButton();
 };
 
 const getFavoriteGroups = (state, searchTerm) =>
