@@ -227,6 +227,16 @@ body {
   box-shadow: 0 12px 26px rgba(47, 128, 237, 0.2);
 }
 
+.space-tab.dragging {
+  opacity: 0.7;
+  cursor: grabbing;
+}
+
+.space-tab-drop {
+  border-color: rgba(47, 128, 237, 0.55);
+  box-shadow: 0 10px 22px rgba(47, 128, 237, 0.2);
+}
+
 .space-dot {
   margin-right: 8px;
 }
@@ -556,6 +566,16 @@ body {
   min-height: 100%;
   box-shadow: var(--shadow-card);
   animation: columnEnter 0.35s ease;
+}
+
+.column.dragging {
+  opacity: 0.72;
+  cursor: grabbing;
+}
+
+.column-drop-target {
+  outline: 2px dashed rgba(37, 99, 235, 0.5);
+  outline-offset: 6px;
 }
 
 .column-header {
