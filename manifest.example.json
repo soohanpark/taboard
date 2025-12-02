@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Taboard",
   "description": "Taboard displays your tab list and personal Kanban board on a single screen when you open a new tab.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "chrome_url_overrides": {
     "newtab": "newtab/index.html"
   },

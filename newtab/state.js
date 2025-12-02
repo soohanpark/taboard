@@ -48,6 +48,24 @@ const sampleCards = () => [
 export const generateId = (prefix = "item") =>
   `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 
+const ACCENT_PALETTE = [
+  "#2563eb",
+  "#6366f1",
+  "#f97316",
+  "#10b981",
+  "#a855f7",
+  "#0ea5e9",
+  "#dc2626",
+  "#f59e0b",
+  "#14b8a6",
+  "#ec4899",
+];
+
+export const getRandomAccent = () => {
+  const index = Math.floor(Math.random() * ACCENT_PALETTE.length);
+  return ACCENT_PALETTE[index];
+};
+
 export const createDefaultState = () => {
   const focusSpaceId = generateId("space");
   const personalSpaceId = generateId("space");
@@ -77,13 +95,13 @@ export const createDefaultState = () => {
       {
         id: focusSpaceId,
         name: "Focus",
-        accent: "#6366f1",
+        accent: getRandomAccent(),
         sections: focusSections,
       },
       {
         id: personalSpaceId,
         name: "Personal",
-        accent: "#f97316",
+        accent: getRandomAccent(),
         sections: personalSections,
       },
     ],
@@ -134,7 +152,7 @@ const normalizeState = (state) => {
   next.spaces = next.spaces.map((space) => ({
     id: space.id ?? generateId("space"),
     name: space.name ?? "Untitled",
-    accent: space.accent ?? "#6366f1",
+    accent: space.accent ?? getRandomAccent(),
     sections: Array.isArray(space.sections)
       ? space.sections.map((section) => ({
           id: section.id ?? generateId("section"),
