@@ -783,6 +783,21 @@ body {
   font-size: 1rem;
 }
 
+.card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-favicon {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background: #e2e8f0;
+  flex-shrink: 0;
+  object-fit: cover;
+}
+
 .card-note {
   margin: 0;
   color: var(--text-muted);
