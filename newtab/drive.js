@@ -1,4 +1,8 @@
-import { clearDriveMetadata, loadDriveMetadata, saveDriveMetadata } from "./storage.js";
+import {
+  clearDriveMetadata,
+  loadDriveMetadata,
+  saveDriveMetadata,
+} from "./storage.js";
 
 const FILE_NAME = "TaboardSync.json";
 const DRIVE_API = "https://www.googleapis.com/drive/v3/files";
@@ -63,7 +67,10 @@ const ensureDriveFile = async (token) => {
   }
 
   const query = encodeURIComponent(`name='${FILE_NAME}' and trashed=false`);
-  const result = await fetchJson(`${DRIVE_API}?q=${query}&fields=files(id,name)`, token);
+  const result = await fetchJson(
+    `${DRIVE_API}?q=${query}&fields=files(id,name)`,
+    token,
+  );
   if (result?.files?.length) {
     driveState.fileId = result.files[0].id;
     await persistMeta();
@@ -77,12 +84,14 @@ const ensureDriveFile = async (token) => {
 
   const boundary = `taboard-${Date.now()}`;
   const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(
-    metadata
-  )}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify({
-    version: 1,
-    spaces: [],
-    preferences: {},
-  })}\r\n--${boundary}--`;
+    metadata,
+  )}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(
+    {
+      version: 1,
+      spaces: [],
+      preferences: {},
+    },
+  )}\r\n--${boundary}--`;
 
   const response = await fetch(`${DRIVE_UPLOAD_API}?uploadType=multipart`, {
     method: "POST",
@@ -104,14 +113,17 @@ const ensureDriveFile = async (token) => {
 };
 
 const uploadData = async (token, fileId, data) => {
-  const response = await fetch(`${DRIVE_UPLOAD_API}/${fileId}?uploadType=media`, {
-    method: "PATCH",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
+  const response = await fetch(
+    `${DRIVE_UPLOAD_API}/${fileId}?uploadType=media`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
     },
-    body: JSON.stringify(data),
-  });
+  );
 
   if (!response.ok) {
     throw new Error(`Failed to upload data (${response.status}).`);
@@ -230,6 +242,19 @@ const withToken = async (interactive = false) => {
   }
 };
 
+const stripFavicons = (state) => {
+  if (!state) return state;
+  const clone = JSON.parse(JSON.stringify(state));
+  clone.spaces?.forEach((space) => {
+    space.sections?.forEach((section) => {
+      section.cards?.forEach((card) => {
+        delete card.favicon;
+      });
+    });
+  });
+  return clone;
+};
+
 export const pushToDrive = async (state) => {
   if (driveState.status !== "connected") {
     return;
@@ -241,7 +266,7 @@ export const pushToDrive = async (state) => {
   try {
     const token = await withToken(false);
     const fileId = await ensureDriveFile(token);
-    await uploadData(token, fileId, state);
+    await uploadData(token, fileId, stripFavicons(state));
     driveState.lastSyncedAt = new Date().toISOString();
     driveState.syncing = false;
     driveState.lastError = null;
