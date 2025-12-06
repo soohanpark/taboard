@@ -16,6 +16,7 @@ const sampleCards = () => [
     color: "#2563eb",
     favorite: true,
     done: false,
+    favicon: "",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -28,6 +29,7 @@ const sampleCards = () => [
     tags: ["focus"],
     color: "#6366f1",
     favorite: false,
+    favicon: "",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -40,6 +42,7 @@ const sampleCards = () => [
     favorite: true,
     color: "#f472b6",
     done: false,
+    favicon: "",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -137,13 +140,17 @@ const normalizeState = (state) => {
   if (next.preferences.viewMode !== "favorites") {
     next.preferences.viewMode = "spaces";
   }
-  const activeSpace = next.spaces.find((space) => space.id === next.preferences.activeSpaceId);
+  const activeSpace = next.spaces.find(
+    (space) => space.id === next.preferences.activeSpaceId,
+  );
   if (!next.preferences.captureSectionId) {
     next.preferences.captureSectionId =
-      activeSpace?.sections?.[0]?.id ?? next.spaces[0]?.sections?.[0]?.id ?? null;
+      activeSpace?.sections?.[0]?.id ??
+      next.spaces[0]?.sections?.[0]?.id ??
+      null;
   } else if (activeSpace) {
     const exists = activeSpace.sections.some(
-      (section) => section.id === next.preferences.captureSectionId
+      (section) => section.id === next.preferences.captureSectionId,
     );
     if (!exists) {
       next.preferences.captureSectionId = activeSpace.sections[0]?.id ?? null;
@@ -168,6 +175,7 @@ const normalizeState = (state) => {
                 color: card.color ?? "#475569",
                 favorite: Boolean(card.favorite),
                 done: Boolean(card.done),
+                favicon: typeof card.favicon === "string" ? card.favicon : "",
                 createdAt: card.createdAt ?? new Date().toISOString(),
                 updatedAt: card.updatedAt ?? new Date().toISOString(),
               }))

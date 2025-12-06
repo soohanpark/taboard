@@ -65,13 +65,66 @@ let driveSyncIntervalId = null;
 let hasPulledDriveState = false;
 let driveSyncInFlight = false;
 const FALLBACK_FAVICON =
-  (typeof chrome !== "undefined" && chrome.runtime?.getURL?.("icons/icon48.png")) ||
+  (typeof chrome !== "undefined" &&
+    chrome.runtime?.getURL?.("icons/icon48.png")) ||
   "icons/icon48.png";
 let confirmResolver = null;
 
+const isSafeIconUrl = (icon) => {
+  if (!icon || typeof icon !== "string") return false;
+  const value = icon.trim();
+  if (!value) return false;
+  return (
+    /^(https?:|data:image)/i.test(value) ||
+    value.startsWith("chrome-extension://") ||
+    value.startsWith("chrome://") ||
+    value.startsWith("/") ||
+    value.startsWith("./") ||
+    value.startsWith("../") ||
+    value.startsWith("icons/")
+  );
+};
+
+const deriveFaviconFromUrl = (url) => {
+  if (!url || typeof url !== "string") return "";
+  try {
+    const parsed = new URL(url.trim());
+    if (!/^https?:/i.test(parsed.protocol)) {
+      return "";
+    }
+    return `${parsed.origin}/favicon.ico`;
+  } catch (error) {
+    return "";
+  }
+};
+
+const resolveCardFavicon = (payload, existingCard = null) => {
+  if (payload.type !== "link") return "";
+  const provided = isSafeIconUrl(payload.favicon) ? payload.favicon.trim() : "";
+  if (provided) return provided;
+  if (
+    existingCard?.favicon &&
+    isSafeIconUrl(existingCard.favicon) &&
+    existingCard.url === payload.url
+  ) {
+    return existingCard.favicon;
+  }
+  return deriveFaviconFromUrl(payload.url);
+};
+
+const getCardFavicon = (card) => {
+  const source =
+    (card?.favicon && isSafeIconUrl(card.favicon) && card.favicon.trim()) ||
+    deriveFaviconFromUrl(card?.url) ||
+    "";
+  return source || FALLBACK_FAVICON;
+};
+
 const getActiveSpace = (state = currentState) => {
   if (!state?.spaces?.length) return null;
-  const active = state.spaces.find((space) => space.id === state.preferences?.activeSpaceId);
+  const active = state.spaces.find(
+    (space) => space.id === state.preferences?.activeSpaceId,
+  );
   return active ?? state.spaces[0];
 };
 
@@ -81,20 +134,27 @@ const findSection = (space, sectionId) =>
 const findSpaceById = (state, spaceId) =>
   state?.spaces?.find((space) => space.id === spaceId) ?? null;
 
-const findCardContext = (state, { spaceId = null, sectionId = null, cardId = null }) => {
+const findCardContext = (
+  state,
+  { spaceId = null, sectionId = null, cardId = null },
+) => {
   let space =
     findSpaceById(state, spaceId) ??
     state?.spaces?.find((candidate) =>
-      candidate.sections?.some((section) => section.id === sectionId)
+      candidate.sections?.some((section) => section.id === sectionId),
     ) ??
     state?.spaces?.find((candidate) =>
-      candidate.sections?.some((section) => section.cards?.some((item) => item.id === cardId))
+      candidate.sections?.some((section) =>
+        section.cards?.some((item) => item.id === cardId),
+      ),
     ) ??
     null;
 
   let section = space?.sections?.find((item) => item.id === sectionId) ?? null;
   if (!section && space && cardId) {
-    section = space.sections?.find((item) => item.cards?.some((card) => card.id === cardId));
+    section = space.sections?.find((item) =>
+      item.cards?.some((card) => card.id === cardId),
+    );
   }
 
   const card = section?.cards?.find((item) => item.id === cardId) ?? null;
@@ -177,8 +237,12 @@ const runDriveSync = async () => {
   try {
     const remoteState = await pullFromDrive();
     const localState = getState();
-    const remoteTime = remoteState?.lastUpdated ? new Date(remoteState.lastUpdated).getTime() : 0;
-    const localTime = localState?.lastUpdated ? new Date(localState.lastUpdated).getTime() : 0;
+    const remoteTime = remoteState?.lastUpdated
+      ? new Date(remoteState.lastUpdated).getTime()
+      : 0;
+    const localTime = localState?.lastUpdated
+      ? new Date(localState.lastUpdated).getTime()
+      : 0;
     if (remoteState && remoteTime > localTime) {
       replaceState(remoteState);
     } else {
@@ -354,10 +418,28 @@ const createCardElement = (card, sectionId, searchTerm, options = {}) => {
     cardEl.appendChild(origin);
   }
 
+  const titleRow = document.createElement("div");
+  titleRow.className = "card-title-row";
+
+  if (card.type === "link") {
+    const favicon = document.createElement("img");
+    favicon.className = "card-favicon";
+    favicon.alt = "";
+    favicon.src = getCardFavicon(card);
+    favicon.addEventListener("error", () => {
+      if (favicon.dataset.fallbackApplied === "true") return;
+      favicon.dataset.fallbackApplied = "true";
+      favicon.src = FALLBACK_FAVICON;
+    });
+    titleRow.appendChild(favicon);
+  }
+
   const title = document.createElement("p");
   title.className = "card-title";
   title.textContent = card.title;
-  cardEl.appendChild(title);
+  titleRow.appendChild(title);
+
+  cardEl.appendChild(titleRow);
 
   if (card.note) {
     const note = document.createElement("p");
@@ -420,7 +502,7 @@ const getDragAfterElement = (container, y) => {
       }
       return closest;
     },
-    { offset: Number.NEGATIVE_INFINITY, element: null }
+    { offset: Number.NEGATIVE_INFINITY, element: null },
   ).element;
 };
 
@@ -435,13 +517,15 @@ const getHorizontalAfterElement = (container, selector, x) => {
       }
       return closest;
     },
-    { offset: Number.NEGATIVE_INFINITY, element: null }
+    { offset: Number.NEGATIVE_INFINITY, element: null },
   ).element;
 };
 
 const attachDropTargets = (cardListEl) => {
   cardListEl.addEventListener("dragover", (event) => {
-    const isTabDrag = Array.from(event.dataTransfer?.types ?? []).includes(TAB_DRAG_MIME);
+    const isTabDrag = Array.from(event.dataTransfer?.types ?? []).includes(
+      TAB_DRAG_MIME,
+    );
     const isCardDrag = Boolean(draggingCard);
     if (!isTabDrag && !isCardDrag) return;
     event.preventDefault();
@@ -454,7 +538,9 @@ const attachDropTargets = (cardListEl) => {
   });
 
   cardListEl.addEventListener("drop", (event) => {
-    const isTabDrag = Array.from(event.dataTransfer?.types ?? []).includes(TAB_DRAG_MIME);
+    const isTabDrag = Array.from(event.dataTransfer?.types ?? []).includes(
+      TAB_DRAG_MIME,
+    );
     const isCardDrag = Boolean(draggingCard);
     if (!isTabDrag && !isCardDrag) return;
     event.preventDefault();
@@ -474,7 +560,9 @@ const attachDropTargets = (cardListEl) => {
     const cards = [...cardListEl.querySelectorAll(".card:not(.dragging)")];
     let targetIndex = cards.length;
     if (afterElement) {
-      targetIndex = cards.findIndex((el) => el.dataset.cardId === afterElement.dataset.cardId);
+      targetIndex = cards.findIndex(
+        (el) => el.dataset.cardId === afterElement.dataset.cardId,
+      );
     }
     moveCard(
       draggingCard.cardId,
@@ -482,7 +570,7 @@ const attachDropTargets = (cardListEl) => {
       cardListEl.dataset.sectionId,
       targetIndex,
       draggingCard.spaceId,
-      cardListEl.dataset.spaceId || null
+      cardListEl.dataset.spaceId || null,
     );
     suppressCardClick = true;
     setTimeout(() => {
@@ -497,30 +585,37 @@ const moveCard = (
   toSectionId,
   targetIndex,
   fromSpaceId = null,
-  toSpaceId = null
+  toSpaceId = null,
 ) => {
   updateState(
     (draft) => {
-      const sourceSpace = fromSpaceId ? findSpaceById(draft, fromSpaceId) : getActiveSpace(draft);
+      const sourceSpace = fromSpaceId
+        ? findSpaceById(draft, fromSpaceId)
+        : getActiveSpace(draft);
       const targetSpace =
         toSpaceId && toSpaceId !== fromSpaceId
           ? findSpaceById(draft, toSpaceId)
-          : sourceSpace ?? getActiveSpace(draft);
+          : (sourceSpace ?? getActiveSpace(draft));
       if (!sourceSpace || !targetSpace) return;
 
       const fromSection = findSection(sourceSpace, fromSectionId);
       const toSection = findSection(targetSpace, toSectionId);
       if (!fromSection || !toSection) return;
 
-      const cardIndex = fromSection.cards.findIndex((card) => card.id === cardId);
+      const cardIndex = fromSection.cards.findIndex(
+        (card) => card.id === cardId,
+      );
       if (cardIndex === -1) return;
 
       const [card] = fromSection.cards.splice(cardIndex, 1);
-      const normalizedIndex = Math.max(0, Math.min(targetIndex, toSection.cards.length));
+      const normalizedIndex = Math.max(
+        0,
+        Math.min(targetIndex, toSection.cards.length),
+      );
       toSection.cards.splice(normalizedIndex, 0, card);
       card.updatedAt = new Date().toISOString();
     },
-    { action: "move-card" }
+    { action: "move-card" },
   );
 };
 
@@ -543,7 +638,7 @@ const moveCardToSpace = (targetSpaceId) => {
     targetSectionId,
     0,
     draggingCard.spaceId,
-    targetSpaceId
+    targetSpaceId,
   );
   suppressCardClick = true;
   setTimeout(() => {
@@ -555,15 +650,22 @@ const moveCardToSpace = (targetSpaceId) => {
 const moveSection = (sectionId, targetIndex, spaceId = null) => {
   updateState(
     (draft) => {
-      const space = spaceId ? findSpaceById(draft, spaceId) : getActiveSpace(draft);
+      const space = spaceId
+        ? findSpaceById(draft, spaceId)
+        : getActiveSpace(draft);
       if (!space) return;
-      const fromIndex = space.sections.findIndex((section) => section.id === sectionId);
+      const fromIndex = space.sections.findIndex(
+        (section) => section.id === sectionId,
+      );
       if (fromIndex === -1) return;
       const [section] = space.sections.splice(fromIndex, 1);
-      const normalizedIndex = Math.max(0, Math.min(targetIndex, space.sections.length));
+      const normalizedIndex = Math.max(
+        0,
+        Math.min(targetIndex, space.sections.length),
+      );
       space.sections.splice(normalizedIndex, 0, section);
     },
-    { action: "move-section" }
+    { action: "move-section" },
   );
 };
 
@@ -573,10 +675,13 @@ const moveSpace = (spaceId, targetIndex) => {
       const fromIndex = draft.spaces.findIndex((space) => space.id === spaceId);
       if (fromIndex === -1) return;
       const [space] = draft.spaces.splice(fromIndex, 1);
-      const normalizedIndex = Math.max(0, Math.min(targetIndex, draft.spaces.length));
+      const normalizedIndex = Math.max(
+        0,
+        Math.min(targetIndex, draft.spaces.length),
+      );
       draft.spaces.splice(normalizedIndex, 0, space);
     },
-    { action: "move-space" }
+    { action: "move-space" },
   );
 };
 
@@ -735,7 +840,11 @@ const getFavoriteGroups = (state, searchTerm) =>
       space.sections.forEach((section) => {
         section.cards.forEach((card) => {
           if (card.favorite && cardMatchesSearch(card, searchTerm)) {
-            cards.push({ card, sectionId: section.id, sectionName: section.name });
+            cards.push({
+              card,
+              sectionId: section.id,
+              sectionName: section.name,
+            });
           }
         });
       });
@@ -797,7 +906,10 @@ const renderFavoritesBoard = (state) => {
   favoriteGroups.forEach((group) => {
     const groupEl = document.createElement("article");
     groupEl.className = "favorites-group";
-    groupEl.style.setProperty("--group-accent", group.space.accent ?? "var(--accent)");
+    groupEl.style.setProperty(
+      "--group-accent",
+      group.space.accent ?? "var(--accent)",
+    );
 
     const header = document.createElement("div");
     header.className = "favorites-group-header";
@@ -816,7 +928,8 @@ const renderFavoritesBoard = (state) => {
 
     const count = document.createElement("span");
     count.className = "favorites-group-count";
-    count.textContent = group.cards.length === 1 ? "1 card" : `${group.cards.length} cards`;
+    count.textContent =
+      group.cards.length === 1 ? "1 card" : `${group.cards.length} cards`;
 
     header.appendChild(title);
     header.appendChild(count);
@@ -844,7 +957,11 @@ const renderFavoritesBoard = (state) => {
 };
 
 const openCardModal = ({ sectionId, cardId = null, spaceId = null }) => {
-  const { section, card } = findCardContext(currentState, { spaceId, sectionId, cardId });
+  const { section, card } = findCardContext(currentState, {
+    spaceId,
+    sectionId,
+    cardId,
+  });
   const fallbackSpace = getActiveSpace();
   const fallbackSectionId = fallbackSpace?.sections?.[0]?.id ?? "";
   const resolvedSectionId = section?.id ?? sectionId ?? fallbackSectionId;
@@ -893,7 +1010,8 @@ const openSpaceModal = (spaceId = null) => {
       spaceForm.elements.spaceId.value = space.id;
       spaceForm.elements.name.value = space.name;
     }
-    spaceDeleteBtn.style.display = currentState.spaces.length > 1 ? "inline-flex" : "none";
+    spaceDeleteBtn.style.display =
+      currentState.spaces.length > 1 ? "inline-flex" : "none";
   } else {
     spaceForm.reset();
     spaceForm.elements.spaceId.value = "";
@@ -921,7 +1039,8 @@ const handleStateChange = (state) => {
   } else {
     renderBoard(state, {
       animateCards: metaAction !== "move-card",
-      animateColumns: metaAction !== "move-card" && metaAction !== "move-section",
+      animateColumns:
+        metaAction !== "move-card" && metaAction !== "move-section",
     });
     if (addColumnBtn) {
       addColumnBtn.style.display = "inline-flex";
@@ -1002,7 +1121,9 @@ const renderOpenTabs = () => {
     item.dataset.tabTitle = tab.title ?? "";
     item.dataset.tabUrl = tab.url ?? "";
     const iconSrc =
-      tab.favIconUrl && /^https?:/i.test(tab.favIconUrl) ? tab.favIconUrl : FALLBACK_FAVICON;
+      tab.favIconUrl && /^https?:/i.test(tab.favIconUrl)
+        ? tab.favIconUrl
+        : FALLBACK_FAVICON;
     item.dataset.tabIcon = iconSrc;
     item.draggable = Boolean(tab.url);
     item.tabIndex = 0;
@@ -1161,14 +1282,18 @@ spaceTabsEl.addEventListener("drop", (event) => {
     const afterElement = getHorizontalAfterElement(
       spaceTabsEl,
       ".space-tab[data-space-id]:not(.dragging)",
-      event.clientX
+      event.clientX,
     );
     const tabs = [
-      ...spaceTabsEl.querySelectorAll(".space-tab[data-space-id]:not(.dragging)"),
+      ...spaceTabsEl.querySelectorAll(
+        ".space-tab[data-space-id]:not(.dragging)",
+      ),
     ];
     let targetIndex = tabs.length;
     if (afterElement) {
-      targetIndex = tabs.findIndex((tab) => tab.dataset.spaceId === afterElement.dataset.spaceId);
+      targetIndex = tabs.findIndex(
+        (tab) => tab.dataset.spaceId === afterElement.dataset.spaceId,
+      );
     }
     clearSpaceDragging();
     moveSpace(draggingSpaceId, targetIndex);
@@ -1229,7 +1354,7 @@ boardEl.addEventListener("click", async (event) => {
   if (deleteColumnEl) {
     const sectionId = deleteColumnEl.dataset.columnDelete;
     const confirmed = await openConfirm(
-      "Delete this board? Cards inside will also be removed."
+      "Delete this board? Cards inside will also be removed.",
     );
     if (!confirmed) {
       return;
@@ -1237,7 +1362,9 @@ boardEl.addEventListener("click", async (event) => {
     updateState((draft) => {
       const active = getActiveSpace(draft);
       if (!active) return;
-      active.sections = active.sections.filter((section) => section.id !== sectionId);
+      active.sections = active.sections.filter(
+        (section) => section.id !== sectionId,
+      );
     });
     showSnackbar("Board deleted.");
     return;
@@ -1259,7 +1386,10 @@ boardEl.addEventListener("focusout", (event) => {
 });
 
 boardEl.addEventListener("keydown", (event) => {
-  if (event.target.classList?.contains("column-title") && event.key === "Enter") {
+  if (
+    event.target.classList?.contains("column-title") &&
+    event.key === "Enter"
+  ) {
     event.preventDefault();
     event.target.blur();
   }
@@ -1271,7 +1401,7 @@ boardEl.addEventListener("dragover", (event) => {
   const afterElement = getHorizontalAfterElement(
     boardEl,
     ".column:not(.dragging)",
-    event.clientX
+    event.clientX,
   );
   clearColumnDropTargets();
   if (afterElement) {
@@ -1285,13 +1415,13 @@ boardEl.addEventListener("drop", (event) => {
   const afterElement = getHorizontalAfterElement(
     boardEl,
     ".column:not(.dragging)",
-    event.clientX
+    event.clientX,
   );
   const columns = [...boardEl.querySelectorAll(".column:not(.dragging)")];
   let targetIndex = columns.length;
   if (afterElement) {
     targetIndex = columns.findIndex(
-      (column) => column.dataset.sectionId === afterElement.dataset.sectionId
+      (column) => column.dataset.sectionId === afterElement.dataset.sectionId,
     );
   }
   clearColumnDropTargets();
@@ -1302,13 +1432,21 @@ boardEl.addEventListener("drop", (event) => {
 });
 
 const handleCardAction = (action, sectionId, cardId, spaceId = null) => {
-  const { card } = findCardContext(currentState, { spaceId, sectionId, cardId });
+  const { card } = findCardContext(currentState, {
+    spaceId,
+    sectionId,
+    cardId,
+  });
   if (!card) return;
 
   switch (action) {
     case "favorite":
       updateState((draft) => {
-        const { card: target } = findCardContext(draft, { spaceId, sectionId, cardId });
+        const { card: target } = findCardContext(draft, {
+          spaceId,
+          sectionId,
+          cardId,
+        });
         if (target) {
           target.favorite = !target.favorite;
         }
@@ -1316,7 +1454,11 @@ const handleCardAction = (action, sectionId, cardId, spaceId = null) => {
       break;
     case "toggle-done":
       updateState((draft) => {
-        const { card: target } = findCardContext(draft, { spaceId, sectionId, cardId });
+        const { card: target } = findCardContext(draft, {
+          spaceId,
+          sectionId,
+          cardId,
+        });
         if (target) {
           target.done = !target.done;
         }
@@ -1327,7 +1469,11 @@ const handleCardAction = (action, sectionId, cardId, spaceId = null) => {
       break;
     case "delete":
       updateState((draft) => {
-        const { section } = findCardContext(draft, { spaceId, sectionId, cardId });
+        const { section } = findCardContext(draft, {
+          spaceId,
+          sectionId,
+          cardId,
+        });
         if (!section) return;
         section.cards = section.cards.filter((item) => item.id !== cardId);
       });
@@ -1342,7 +1488,11 @@ const handleCardPrimaryClick = (cardElement) => {
   const sectionId = cardElement.dataset.sectionId;
   const cardId = cardElement.dataset.cardId;
   const spaceId = cardElement.dataset.spaceId || null;
-  const { card } = findCardContext(currentState, { spaceId, sectionId, cardId });
+  const { card } = findCardContext(currentState, {
+    spaceId,
+    sectionId,
+    cardId,
+  });
   if (!card) return;
   if (card.type === "link" && card.url) {
     window.open(card.url, "_blank");
@@ -1355,6 +1505,10 @@ const addTabCardToSection = (sectionId, tabPayload) => {
     const active = getActiveSpace(draft);
     const section = findSection(active, sectionId);
     if (!section) return;
+    const favicon = resolveCardFavicon(
+      { type: "link", url: tabPayload.url, favicon: tabPayload.favIcon },
+      null,
+    );
     section.cards.unshift({
       id: generateId("card"),
       type: "link",
@@ -1364,6 +1518,7 @@ const addTabCardToSection = (sectionId, tabPayload) => {
       tags: [],
       favorite: false,
       done: false,
+      favicon,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -1451,7 +1606,9 @@ const openSectionLinks = async (sectionId) => {
     !chrome?.windows?.getCurrent
   ) {
     links.forEach((card) => window.open(card.url, "_blank"));
-    showSnackbar("Your browser doesn't support tab groups; opened in new tabs.");
+    showSnackbar(
+      "Your browser doesn't support tab groups; opened in new tabs.",
+    );
     return;
   }
 
@@ -1476,7 +1633,7 @@ const openSectionLinks = async (sectionId) => {
     await chromeTabGroupsUpdate(groupId, { title: section.name });
     chrome.tabs.update(tabIds[0], { active: true });
     showSnackbar(
-      `Opened ${links.length} link ${links.length === 1 ? "card" : "cards"} as a group in this window.`
+      `Opened ${links.length} link ${links.length === 1 ? "card" : "cards"} as a group in this window.`,
     );
   } catch (error) {
     console.error("Failed to open section links as group", error);
@@ -1493,7 +1650,11 @@ addColumnBtn?.addEventListener("click", () => {
   updateState((draft) => {
     const active = getActiveSpace(draft);
     if (!active) return;
-    active.sections.push({ id: generateId("section"), name: "New board", cards: [] });
+    active.sections.push({
+      id: generateId("section"),
+      name: "New board",
+      cards: [],
+    });
   });
   showSnackbar("Board added.");
 });
@@ -1520,14 +1681,22 @@ cardForm.addEventListener("submit", (event) => {
   const existingContext = findCardContext(currentState, { sectionId, cardId });
   const cardType = formData.get("type") ?? "note";
   const resolvedSectionId =
-    sectionId || existingContext.section?.id || getActiveSpace()?.sections?.[0]?.id || "";
-  const targetSpaceId = existingContext.space?.id ?? getActiveSpace()?.id ?? null;
+    sectionId ||
+    existingContext.section?.id ||
+    getActiveSpace()?.sections?.[0]?.id ||
+    "";
+  const targetSpaceId =
+    existingContext.space?.id ?? getActiveSpace()?.id ?? null;
 
   const payload = {
     title: formData.get("title")?.toString().trim(),
     type: cardType,
-    note: cardType === "link" ? "" : (formData.get("note")?.toString().trim() ?? ""),
-    url: cardType === "link" ? (formData.get("url")?.toString().trim() ?? "") : "",
+    note:
+      cardType === "link"
+        ? ""
+        : (formData.get("note")?.toString().trim() ?? ""),
+    url:
+      cardType === "link" ? (formData.get("url")?.toString().trim() ?? "") : "",
     tags:
       formData
         .get("tags")
@@ -1536,6 +1705,7 @@ cardForm.addEventListener("submit", (event) => {
         .map((tag) => tag.trim())
         .filter(Boolean) ?? [],
   };
+  const favicon = resolveCardFavicon(payload, existingContext?.card);
 
   if (!payload.title || !resolvedSectionId) {
     showSnackbar("Please double-check the card information.");
@@ -1555,7 +1725,7 @@ cardForm.addEventListener("submit", (event) => {
         cardId,
       });
       if (card) {
-        Object.assign(card, payload);
+        Object.assign(card, payload, { favicon });
         card.updatedAt = new Date().toISOString();
       }
     });
@@ -1571,6 +1741,7 @@ cardForm.addEventListener("submit", (event) => {
           id: generateId("card"),
           favorite: false,
           done: false,
+          favicon,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           ...payload,
@@ -1587,9 +1758,14 @@ cardDeleteBtn.addEventListener("click", () => {
   const cardId = cardForm.elements.cardId.value;
   const sectionId = cardForm.elements.sectionId.value;
   if (!cardId || !sectionId) return;
-  const targetSpaceId = findCardContext(currentState, { sectionId, cardId }).space?.id ?? null;
+  const targetSpaceId =
+    findCardContext(currentState, { sectionId, cardId }).space?.id ?? null;
   updateState((draft) => {
-    const { section } = findCardContext(draft, { spaceId: targetSpaceId, sectionId, cardId });
+    const { section } = findCardContext(draft, {
+      spaceId: targetSpaceId,
+      sectionId,
+      cardId,
+    });
     if (section) {
       section.cards = section.cards.filter((card) => card.id !== cardId);
     }
@@ -1620,7 +1796,12 @@ spaceForm.addEventListener("submit", (event) => {
   } else {
     const newSpaceId = generateId("space");
     updateState((draft) => {
-      draft.spaces.push({ id: newSpaceId, name, accent: getRandomAccent(), sections: [] });
+      draft.spaces.push({
+        id: newSpaceId,
+        name,
+        accent: getRandomAccent(),
+        sections: [],
+      });
       draft.preferences.activeSpaceId = newSpaceId;
     });
     showSnackbar("Space created.");
