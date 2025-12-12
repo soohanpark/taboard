@@ -60,10 +60,12 @@ const cleanupTabListeners = [];
 const TAB_DRAG_MIME = "application/taboard-tab";
 let suppressCardClick = false;
 const DRIVE_SYNC_INTERVAL = 30 * 60 * 1000;
+const NEWTAB_DRIVE_CHECK_INTERVAL = 60 * 60 * 1000;
 const VIEW_MODES = { SPACES: "spaces", FAVORITES: "favorites" };
 let driveSyncIntervalId = null;
 let hasPulledDriveState = false;
 let driveSyncInFlight = false;
+let suppressNextDriveSync = false;
 const FALLBACK_FAVICON =
   (typeof chrome !== "undefined" &&
     chrome.runtime?.getURL?.("icons/icon48.png")) ||
@@ -203,7 +205,10 @@ const schedulePersist = (state) => {
   saveTimer = setTimeout(() => saveStateToStorage(state), 350);
 };
 
-const scheduleDriveSync = (state, immediate = false) => {
+const scheduleDriveSync = (
+  state,
+  { immediate = false, trigger = null, meta = null } = {},
+) => {
   const driveSnapshot = getDriveSnapshot();
   if (driveSnapshot.status !== "connected") {
     return;
@@ -212,44 +217,139 @@ const scheduleDriveSync = (state, immediate = false) => {
   clearTimeout(driveTimer);
   const executor = async () => {
     try {
-      await pushToDrive(state);
-      if (immediate) {
-        showSnackbar("Google Drive backup complete");
+      if (trigger === "add-card") {
+        await runDriveSync({ reason: "add-card", localState: state, meta });
+        return;
       }
+      await pushToDrive(state);
+      if (immediate) showSnackbar("Google Drive backup complete");
     } catch (error) {
       console.error(error);
       showSnackbar("Drive sync failed: " + error.message);
     }
   };
 
-  if (immediate) {
+  if (immediate || trigger === "add-card") {
     executor();
   } else {
     driveTimer = setTimeout(executor, 1500);
   }
 };
 
-const runDriveSync = async () => {
-  if (driveSyncInFlight || getDriveSnapshot().status !== "connected") {
-    return;
+const mergeAddedCardsIntoRemote = (
+  remoteState,
+  localState,
+  addedCards = [],
+) => {
+  if (!remoteState || !localState || !Array.isArray(addedCards)) {
+    return remoteState;
   }
+
+  const merged = JSON.parse(JSON.stringify(remoteState));
+
+  const remoteHasCard = (cardId) => {
+    if (!cardId) return false;
+    return merged.spaces?.some((space) =>
+      space.sections?.some((section) =>
+        section.cards?.some((card) => card.id === cardId),
+      ),
+    );
+  };
+
+  addedCards.forEach((entry) => {
+    const cardId = entry?.id;
+    if (!cardId || remoteHasCard(cardId)) return;
+
+    const { card } = findCardContext(localState, {
+      spaceId: entry.spaceId ?? null,
+      sectionId: entry.sectionId ?? null,
+      cardId,
+    });
+    if (!card) return;
+
+    let targetSpace =
+      merged.spaces?.find((space) => space.id === entry.spaceId) ??
+      merged.spaces?.[0] ??
+      null;
+    if (!targetSpace) return;
+
+    let targetSection =
+      targetSpace.sections?.find(
+        (section) => section.id === entry.sectionId,
+      ) ??
+      targetSpace.sections?.[0] ??
+      null;
+    if (!targetSection) return;
+
+    if (!Array.isArray(targetSection.cards)) {
+      targetSection.cards = [];
+    }
+    targetSection.cards.unshift(JSON.parse(JSON.stringify(card)));
+  });
+
+  return merged;
+};
+
+const runDriveSync = async ({
+  reason = "interval",
+  localState = null,
+  meta = null,
+  throwOnError = false,
+} = {}) => {
+  const snapshot = getDriveSnapshot();
+  if (driveSyncInFlight || snapshot.status !== "connected") return;
+
+  if (reason === "newtab") {
+    const lastCheckedAt = snapshot.lastCheckedAt
+      ? new Date(snapshot.lastCheckedAt).getTime()
+      : 0;
+    if (
+      lastCheckedAt &&
+      Date.now() - lastCheckedAt < NEWTAB_DRIVE_CHECK_INTERVAL
+    ) {
+      return;
+    }
+  }
+
   driveSyncInFlight = true;
   try {
-    const remoteState = await pullFromDrive();
-    const localState = getState();
+    const remoteState = await pullFromDrive({
+      markChecked: reason === "newtab",
+    });
+    const resolvedLocalState = localState ?? getState();
     const remoteTime = remoteState?.lastUpdated
       ? new Date(remoteState.lastUpdated).getTime()
       : 0;
-    const localTime = localState?.lastUpdated
-      ? new Date(localState.lastUpdated).getTime()
+    const localTime = resolvedLocalState?.lastUpdated
+      ? new Date(resolvedLocalState.lastUpdated).getTime()
       : 0;
     if (remoteState && remoteTime > localTime) {
-      replaceState(remoteState);
+      if (reason === "add-card" && meta?.addedCards?.length) {
+        const mergedState = mergeAddedCardsIntoRemote(
+          remoteState,
+          resolvedLocalState,
+          meta.addedCards,
+        );
+        suppressNextDriveSync = true;
+        replaceState(mergedState);
+        await pushToDrive(mergedState);
+      } else {
+        suppressNextDriveSync = true;
+        replaceState(remoteState);
+      }
     } else {
-      await pushToDrive(localState);
+      await pushToDrive(resolvedLocalState);
     }
   } catch (error) {
-    console.error("Google Drive background sync failed", error);
+    console.error("Google Drive sync failed", error);
+    if (
+      throwOnError ||
+      reason === "manual" ||
+      reason === "add-card" ||
+      reason === "connect"
+    ) {
+      throw error;
+    }
   } finally {
     driveSyncInFlight = false;
   }
@@ -258,9 +358,9 @@ const runDriveSync = async () => {
 const startDriveBackgroundSync = () => {
   if (driveSyncIntervalId) return;
   driveSyncIntervalId = setInterval(() => {
-    runDriveSync();
+    runDriveSync({ reason: "interval" });
   }, DRIVE_SYNC_INTERVAL);
-  runDriveSync();
+  runDriveSync({ reason: "newtab" });
 };
 
 const stopDriveBackgroundSync = () => {
@@ -1024,10 +1124,9 @@ const openSpaceModal = (spaceId = null) => {
 };
 
 const handleStateChange = (state) => {
-  const metaAction = state.meta?.action ?? null;
-  if (state.meta) {
-    delete state.meta;
-  }
+  const meta = state.meta ? { ...state.meta } : null;
+  const metaAction = meta?.action ?? null;
+  if (state.meta) delete state.meta;
   currentState = state;
   renderSpaceTabs(state);
   const isFavoritesView = state.preferences.viewMode === VIEW_MODES.FAVORITES;
@@ -1050,7 +1149,11 @@ const handleStateChange = (state) => {
     searchInput.value = state.preferences.searchTerm ?? "";
   }
   schedulePersist(state);
-  scheduleDriveSync(state);
+  if (suppressNextDriveSync) {
+    suppressNextDriveSync = false;
+    return;
+  }
+  scheduleDriveSync(state, { trigger: metaAction, meta });
 };
 
 const handleDriveUpdate = (snapshot) => {
@@ -1501,28 +1604,38 @@ const handleCardPrimaryClick = (cardElement) => {
 
 const addTabCardToSection = (sectionId, tabPayload) => {
   if (!sectionId || !tabPayload?.url) return;
-  updateState((draft) => {
-    const active = getActiveSpace(draft);
-    const section = findSection(active, sectionId);
-    if (!section) return;
-    const favicon = resolveCardFavicon(
-      { type: "link", url: tabPayload.url, favicon: tabPayload.favIcon },
-      null,
-    );
-    section.cards.unshift({
-      id: generateId("card"),
-      type: "link",
-      title: tabPayload.title?.trim() || tabPayload.url,
-      note: "",
-      url: tabPayload.url,
-      tags: [],
-      favorite: false,
-      done: false,
-      favicon,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
-  });
+  const activeSpaceId = getActiveSpace()?.id ?? null;
+  const newCardId = generateId("card");
+  updateState(
+    (draft) => {
+      const active = getActiveSpace(draft);
+      const section = findSection(active, sectionId);
+      if (!section) return;
+      const favicon = resolveCardFavicon(
+        { type: "link", url: tabPayload.url, favicon: tabPayload.favIcon },
+        null,
+      );
+      section.cards.unshift({
+        id: newCardId,
+        type: "link",
+        title: tabPayload.title?.trim() || tabPayload.url,
+        note: "",
+        url: tabPayload.url,
+        tags: [],
+        favorite: false,
+        done: false,
+        favicon,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    },
+    {
+      action: "add-card",
+      addedCards: [
+        { id: newCardId, spaceId: activeSpaceId, sectionId: sectionId },
+      ],
+    },
+  );
   showSnackbar("Tab saved as a card.");
 };
 
@@ -1731,23 +1844,36 @@ cardForm.addEventListener("submit", (event) => {
     });
     showSnackbar("Card updated.");
   } else {
-    updateState((draft) => {
-      const { section } = findCardContext(draft, {
-        spaceId: targetSpaceId,
-        sectionId: resolvedSectionId,
-      });
-      if (section) {
-        section.cards.unshift({
-          id: generateId("card"),
-          favorite: false,
-          done: false,
-          favicon,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          ...payload,
+    const newCardId = generateId("card");
+    updateState(
+      (draft) => {
+        const { section } = findCardContext(draft, {
+          spaceId: targetSpaceId,
+          sectionId: resolvedSectionId,
         });
-      }
-    });
+        if (section) {
+          section.cards.unshift({
+            id: newCardId,
+            favorite: false,
+            done: false,
+            favicon,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            ...payload,
+          });
+        }
+      },
+      {
+        action: "add-card",
+        addedCards: [
+          {
+            id: newCardId,
+            spaceId: targetSpaceId,
+            sectionId: resolvedSectionId,
+          },
+        ],
+      },
+    );
     showSnackbar("Card added.");
   }
 
@@ -1895,10 +2021,7 @@ driveConnectBtn.addEventListener("click", async () => {
     await connectDrive();
     if (!hasPulledDriveState) {
       try {
-        const remoteState = await pullFromDrive();
-        if (remoteState) {
-          replaceState(remoteState);
-        }
+        await runDriveSync({ reason: "connect" });
         hasPulledDriveState = true;
       } catch (error) {
         console.error("Failed to pull Drive data", error);
@@ -1906,7 +2029,7 @@ driveConnectBtn.addEventListener("click", async () => {
       }
     }
     showSnackbar("Connected to Google Drive.");
-    scheduleDriveSync(getState(), true);
+    scheduleDriveSync(getState(), { immediate: true });
   } catch (error) {
     showSnackbar("Failed to connect to Drive: " + error.message);
   }
@@ -1918,7 +2041,7 @@ driveMenuSyncBtn?.addEventListener("click", async (event) => {
   if (getDriveSnapshot().status !== "connected") return;
   showSnackbar("Manually syncing with Google Drive...");
   try {
-    await runDriveSync();
+    await runDriveSync({ reason: "manual" });
     showSnackbar("Manual sync with Drive completed.");
   } catch (error) {
     showSnackbar("Drive sync failed: " + error.message);

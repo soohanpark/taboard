@@ -17,6 +17,7 @@ let driveState = {
   user: null,
   fileId: null,
   lastSyncedAt: null,
+  lastCheckedAt: null,
   syncing: false,
   lastError: null,
 };
@@ -28,8 +29,8 @@ const emit = () => {
 };
 
 const persistMeta = async () => {
-  const { fileId, lastSyncedAt, user } = driveState;
-  await saveDriveMetadata({ fileId, lastSyncedAt, user });
+  const { fileId, lastSyncedAt, lastCheckedAt, user } = driveState;
+  await saveDriveMetadata({ fileId, lastSyncedAt, lastCheckedAt, user });
 };
 
 const getAuthToken = (interactive = false) =>
@@ -161,6 +162,7 @@ export const initDrive = async () => {
       status: "connected",
       fileId: meta.fileId,
       lastSyncedAt: meta.lastSyncedAt ?? null,
+      lastCheckedAt: meta.lastCheckedAt ?? null,
       user: meta.user ?? null,
     };
     emit();
@@ -205,6 +207,7 @@ export const disconnectDrive = async () => {
       user: null,
       fileId: null,
       lastSyncedAt: null,
+      lastCheckedAt: null,
       syncing: false,
       lastError: null,
     };
@@ -280,7 +283,7 @@ export const pushToDrive = async (state) => {
   }
 };
 
-export const pullFromDrive = async () => {
+export const pullFromDrive = async (options = {}) => {
   if (driveState.status !== "connected") {
     throw new Error("Drive is not connected.");
   }
@@ -292,6 +295,10 @@ export const pullFromDrive = async () => {
     const token = await withToken(false);
     const fileId = await ensureDriveFile(token);
     const data = await downloadData(token, fileId);
+    if (options.markChecked) {
+      driveState.lastCheckedAt = new Date().toISOString();
+      await persistMeta();
+    }
     driveState.syncing = false;
     driveState.lastError = null;
     emit();
