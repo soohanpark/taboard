@@ -42,3 +42,12 @@ Note: If a company policy blocks Google sign-in popups, Drive sync will be unava
 
 - If the new tab page doesn’t appear, click **Reload** for Taboard in `chrome://extensions`.
 - If Drive sync errors persist, reload the extension or disconnect and reconnect it from the menu.
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [CLAUDE.md](CLAUDE.md) | Technical context for AI assistants (source of truth) |
+| [AGENTS.md](AGENTS.md) | Guidelines for AI agents |
+| [docs/](docs/) | Detailed documentation |
+| [meta/](meta/) | Project metadata & changelog |

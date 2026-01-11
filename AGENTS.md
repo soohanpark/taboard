@@ -1,5 +1,8 @@
 # Repository Guidelines
 
+> **Source of Truth**: [CLAUDE.md](CLAUDE.md) contains the canonical project context.
+> This file provides guidelines optimized for AI agents. For detailed navigation, see CLAUDE.md.
+
 ## Project Structure & Module Organization
 - Root is a Manifest V3 extension; load the folder directly in Chrome.
 - `manifest.json` declares permissions, OAuth client ID, and the new tab override.
@@ -29,3 +32,13 @@
 ## Security & Configuration Tips
 - Do not commit real Google OAuth Client IDs or tokens; keep them local using `manifest.example.json` as a base.
 - Document any permission changes in `manifest.json` so reviewers can assess impact (tabs, tabGroups, identity, host permissions).
+
+## Further Reading
+
+| Document | Purpose |
+|----------|---------|
+| [CLAUDE.md](CLAUDE.md) | Full project context & navigation index |
+| [README.md](README.md) | User-facing project overview |
+| [docs/architecture/](docs/architecture/) | System design details |
+| [docs/guides/](docs/guides/) | Development & testing guides |
+| [meta/](meta/) | Project metadata & changelog |
