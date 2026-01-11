@@ -317,6 +317,14 @@ const runDriveSync = async ({
       markChecked: reason === "newtab",
     });
     const resolvedLocalState = localState ?? getState();
+
+    // On connect: prioritize remote state to prevent new device from overwriting
+    if (reason === "connect" && remoteState) {
+      suppressNextDriveSync = true;
+      replaceState(remoteState, { preserveTimestamp: true });
+      return;
+    }
+
     const remoteTime = remoteState?.lastUpdated
       ? new Date(remoteState.lastUpdated).getTime()
       : 0;
@@ -335,7 +343,7 @@ const runDriveSync = async ({
         await pushToDrive(mergedState);
       } else {
         suppressNextDriveSync = true;
-        replaceState(remoteState);
+        replaceState(remoteState, { preserveTimestamp: true });
       }
     } else {
       await pushToDrive(resolvedLocalState);

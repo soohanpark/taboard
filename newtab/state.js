@@ -198,9 +198,11 @@ export const initState = (initial) => {
   notify();
 };
 
-export const replaceState = (nextState) => {
+export const replaceState = (nextState, { preserveTimestamp = false } = {}) => {
   appState = normalizeState(nextState);
-  appState.lastUpdated = new Date().toISOString();
+  if (!preserveTimestamp) {
+    appState.lastUpdated = new Date().toISOString();
+  }
   notify();
 };
 
