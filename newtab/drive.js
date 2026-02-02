@@ -247,15 +247,9 @@ const withToken = async (interactive = false) => {
 
 const stripFavicons = (state) => {
   if (!state) return state;
-  const clone = JSON.parse(JSON.stringify(state));
-  clone.spaces?.forEach((space) => {
-    space.sections?.forEach((section) => {
-      section.cards?.forEach((card) => {
-        delete card.favicon;
-      });
-    });
-  });
-  return clone;
+  return JSON.parse(
+    JSON.stringify(state, (key, value) => (key === "favicon" ? undefined : value))
+  );
 };
 
 export const pushToDrive = async (state) => {

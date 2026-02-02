@@ -188,8 +188,9 @@ const normalizeState = (state) => {
 };
 
 const notify = () => {
+  const snapshot = Object.freeze(appState);
   for (const listener of listeners) {
-    listener(clone(appState));
+    listener(snapshot);
   }
 };
 
@@ -218,6 +219,6 @@ export const updateState = (mutator, meta = {}) => {
   mutator(draft);
   draft.lastUpdated = new Date().toISOString();
   draft.meta = { ...(draft.meta ?? {}), ...meta };
-  appState = normalizeState(draft);
+  appState = draft;
   notify();
 };
