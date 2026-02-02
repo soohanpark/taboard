@@ -51,6 +51,7 @@ let currentState = null;
 let saveTimer = null;
 let driveTimer = null;
 let snackbarTimer = null;
+let searchDebounceTimer = null;
 let draggingCard = null;
 let draggingSectionId = null;
 let draggingSpaceId = null;
@@ -161,6 +162,26 @@ const findCardContext = (
 
   const card = section?.cards?.find((item) => item.id === cardId) ?? null;
   return { space, section, card };
+};
+
+const findCardIndices = (
+  state,
+  { spaceId = null, sectionId = null, cardId = null },
+) => {
+  for (let si = 0; si < (state?.spaces?.length ?? 0); si++) {
+    const space = state.spaces[si];
+    if (spaceId && space.id !== spaceId) continue;
+    for (let bi = 0; bi < (space.sections?.length ?? 0); bi++) {
+      const section = space.sections[bi];
+      if (sectionId && section.id !== sectionId) continue;
+      for (let ci = 0; ci < (section.cards?.length ?? 0); ci++) {
+        if (section.cards[ci].id === cardId) {
+          return { spaceIdx: si, sectionIdx: bi, cardIdx: ci };
+        }
+      }
+    }
+  }
+  return null;
 };
 
 const hideSnackbar = () => {
@@ -274,9 +295,7 @@ const mergeAddedCardsIntoRemote = (
     if (!targetSpace) return;
 
     let targetSection =
-      targetSpace.sections?.find(
-        (section) => section.id === entry.sectionId,
-      ) ??
+      targetSpace.sections?.find((section) => section.id === entry.sectionId) ??
       targetSpace.sections?.[0] ??
       null;
     if (!targetSection) return;
@@ -799,9 +818,11 @@ const clearSpaceTabDropState = () => {
 };
 
 const clearSpaceDragging = () => {
-  clearSpaceTabDropState();
-  const draggingTab = spaceTabsEl.querySelector(".space-tab.dragging");
-  draggingTab?.classList.remove("dragging");
+  spaceTabsEl
+    .querySelectorAll(".space-tab-drop, .space-tab.dragging")
+    .forEach((el) => {
+      el.classList.remove("space-tab-drop", "dragging");
+    });
 };
 
 const clearColumnDropTargets = () => {
@@ -1216,7 +1237,6 @@ const closeBrowserTab = (tabId) => {
 };
 
 const renderOpenTabs = () => {
-  tabListEl.innerHTML = "";
   const filtered = openTabs.filter((tab) => {
     if (!tabFilter) return true;
     const haystack = `${tab.title} ${tab.url}`.toLowerCase();
@@ -1225,6 +1245,7 @@ const renderOpenTabs = () => {
 
   tabCountEl.textContent = filtered.length;
 
+  const fragment = document.createDocumentFragment();
   filtered.forEach((tab) => {
     const item = document.createElement("div");
     item.className = "tab-item";
@@ -1273,8 +1294,11 @@ const renderOpenTabs = () => {
     closeBtn.textContent = "×";
     item.appendChild(closeBtn);
 
-    tabListEl.appendChild(item);
+    fragment.appendChild(item);
   });
+
+  tabListEl.innerHTML = "";
+  tabListEl.appendChild(fragment);
 };
 
 const fetchOpenTabs = async () => {
@@ -1284,7 +1308,11 @@ const fetchOpenTabs = async () => {
 
 const registerTabObservers = () => {
   if (!chrome?.tabs) return;
-  const update = () => fetchOpenTabs();
+  let tabUpdateTimer = null;
+  const debouncedUpdate = () => {
+    clearTimeout(tabUpdateTimer);
+    tabUpdateTimer = setTimeout(fetchOpenTabs, 100);
+  };
   const events = [
     chrome.tabs.onCreated,
     chrome.tabs.onRemoved,
@@ -1298,8 +1326,8 @@ const registerTabObservers = () => {
 
   events.forEach((event) => {
     if (event?.addListener) {
-      event.addListener(update);
-      cleanupTabListeners.push(() => event.removeListener(update));
+      event.addListener(debouncedUpdate);
+      cleanupTabListeners.push(() => event.removeListener(debouncedUpdate));
     }
   });
 
@@ -1543,6 +1571,13 @@ boardEl.addEventListener("drop", (event) => {
 });
 
 const handleCardAction = (action, sectionId, cardId, spaceId = null) => {
+  const indices = findCardIndices(currentState, {
+    spaceId,
+    sectionId,
+    cardId,
+  });
+  if (!indices) return;
+
   const { card } = findCardContext(currentState, {
     spaceId,
     sectionId,
@@ -1553,11 +1588,10 @@ const handleCardAction = (action, sectionId, cardId, spaceId = null) => {
   switch (action) {
     case "favorite":
       updateState((draft) => {
-        const { card: target } = findCardContext(draft, {
-          spaceId,
-          sectionId,
-          cardId,
-        });
+        const target =
+          draft.spaces[indices.spaceIdx]?.sections[indices.sectionIdx]?.cards[
+            indices.cardIdx
+          ];
         if (target) {
           target.favorite = !target.favorite;
         }
@@ -1565,11 +1599,10 @@ const handleCardAction = (action, sectionId, cardId, spaceId = null) => {
       break;
     case "toggle-done":
       updateState((draft) => {
-        const { card: target } = findCardContext(draft, {
-          spaceId,
-          sectionId,
-          cardId,
-        });
+        const target =
+          draft.spaces[indices.spaceIdx]?.sections[indices.sectionIdx]?.cards[
+            indices.cardIdx
+          ];
         if (target) {
           target.done = !target.done;
         }
@@ -1580,11 +1613,8 @@ const handleCardAction = (action, sectionId, cardId, spaceId = null) => {
       break;
     case "delete":
       updateState((draft) => {
-        const { section } = findCardContext(draft, {
-          spaceId,
-          sectionId,
-          cardId,
-        });
+        const section =
+          draft.spaces[indices.spaceIdx]?.sections[indices.sectionIdx];
         if (!section) return;
         section.cards = section.cards.filter((item) => item.id !== cardId);
       });
@@ -2071,9 +2101,12 @@ tabFilterInput.addEventListener("input", (event) => {
 
 searchInput.addEventListener("input", (event) => {
   const value = event.target.value;
-  updateState((draft) => {
-    draft.preferences.searchTerm = value;
-  });
+  clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(() => {
+    updateState((draft) => {
+      draft.preferences.searchTerm = value;
+    });
+  }, 150);
 });
 
 tabListEl.addEventListener("dragstart", (event) => {
