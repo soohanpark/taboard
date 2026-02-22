@@ -323,12 +323,19 @@ export const initDriveUI = (callbacks = {}) => {
     event.preventDefault();
     event.stopPropagation();
     if (getDriveSnapshot().status !== "connected") return;
+    if (driveMenuSyncBtn.disabled) return;
+    driveMenuSyncBtn.disabled = true;
+    const originalText = driveMenuSyncBtn.textContent;
+    driveMenuSyncBtn.textContent = "Syncing...";
     showSnackbar("Manually syncing with Google Drive...");
     try {
       await runDriveSync({ reason: "manual" });
       showSnackbar("Manual sync with Drive completed.");
     } catch (error) {
       showSnackbar("Drive sync failed: " + error.message);
+    } finally {
+      driveMenuSyncBtn.disabled = false;
+      driveMenuSyncBtn.textContent = originalText;
     }
   });
 

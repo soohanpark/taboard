@@ -253,13 +253,25 @@ export const initModals = (callbacks = {}) => {
       existingContext?.card,
     );
 
+    const titleInput = cardForm?.elements?.title;
+    const urlInput = cardForm?.elements?.url;
+
+    titleInput?.classList.remove("input-error");
+    urlInput?.classList.remove("input-error");
     if (!payload.title || !resolvedBoardId) {
       showSnackbar("Please double-check the card information.");
+      if (!payload.title && titleInput) {
+        titleInput.classList.add("input-error");
+        titleInput.focus();
+      }
       return;
     }
-
     if (payload.type === "link" && !payload.url) {
       showSnackbar("Please enter a link.");
+      if (urlInput) {
+        urlInput.classList.add("input-error");
+        urlInput.focus();
+      }
       return;
     }
 
