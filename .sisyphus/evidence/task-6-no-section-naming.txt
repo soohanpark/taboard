@@ -1,0 +1,6 @@
+newtab/state.js:147:        next.spaces[0]?.sections?.[0]?.id ??
+newtab/state.js:169:      activeSpace?.sections?.[0]?.id ??
+newtab/state.js:171:      next.spaces[0]?.sections?.[0]?.id ??
+newtab/state.js:186:      if (!space.boards && space.sections) {
+newtab/state.js:187:        space.boards = space.sections;
+newtab/state.js:188:        delete space.sections;

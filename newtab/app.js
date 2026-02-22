@@ -29,7 +29,6 @@ import {
   VIEW_MODES,
   FALLBACK_FAVICON,
   DEFAULT_BOARD_NAME,
-  DEFAULT_SPACE_NAME,
   SNACKBAR_DURATION_MS,
 } from "./constants.js";
 
@@ -67,7 +66,7 @@ let driveTimer = null;
 let snackbarTimer = null;
 let searchDebounceTimer = null;
 let draggingCard = null;
-let draggingSectionId = null;
+let draggingBoardId = null;
 let draggingSpaceId = null;
 let openTabs = [];
 let tabFilter = "";
@@ -134,52 +133,52 @@ const getActiveSpace = (state = currentState) => {
   return active ?? state.spaces[0];
 };
 
-const findSection = (space, sectionId) =>
-  space?.sections?.find((section) => section.id === sectionId) ?? null;
+const findBoard = (space, boardId) =>
+  space?.boards?.find((board) => board.id === boardId) ?? null;
 
 const findSpaceById = (state, spaceId) =>
   state?.spaces?.find((space) => space.id === spaceId) ?? null;
 
 const findCardContext = (
   state,
-  { spaceId = null, sectionId = null, cardId = null },
+  { spaceId = null, boardId = null, cardId = null },
 ) => {
   let space =
     findSpaceById(state, spaceId) ??
     state?.spaces?.find((candidate) =>
-      candidate.sections?.some((section) => section.id === sectionId),
+      candidate.boards?.some((board) => board.id === boardId),
     ) ??
     state?.spaces?.find((candidate) =>
-      candidate.sections?.some((section) =>
-        section.cards?.some((item) => item.id === cardId),
+      candidate.boards?.some((board) =>
+        board.cards?.some((item) => item.id === cardId),
       ),
     ) ??
     null;
 
-  let section = space?.sections?.find((item) => item.id === sectionId) ?? null;
-  if (!section && space && cardId) {
-    section = space.sections?.find((item) =>
+  let board = space?.boards?.find((item) => item.id === boardId) ?? null;
+  if (!board && space && cardId) {
+    board = space.boards?.find((item) =>
       item.cards?.some((card) => card.id === cardId),
     );
   }
 
-  const card = section?.cards?.find((item) => item.id === cardId) ?? null;
-  return { space, section, card };
+  const card = board?.cards?.find((item) => item.id === cardId) ?? null;
+  return { space, board, card };
 };
 
 const findCardIndices = (
   state,
-  { spaceId = null, sectionId = null, cardId = null },
+  { spaceId = null, boardId = null, cardId = null },
 ) => {
   for (let si = 0; si < (state?.spaces?.length ?? 0); si++) {
     const space = state.spaces[si];
     if (spaceId && space.id !== spaceId) continue;
-    for (let bi = 0; bi < (space.sections?.length ?? 0); bi++) {
-      const section = space.sections[bi];
-      if (sectionId && section.id !== sectionId) continue;
-      for (let ci = 0; ci < (section.cards?.length ?? 0); ci++) {
-        if (section.cards[ci].id === cardId) {
-          return { spaceIdx: si, sectionIdx: bi, cardIdx: ci };
+    for (let bi = 0; bi < (space.boards?.length ?? 0); bi++) {
+      const board = space.boards[bi];
+      if (boardId && board.id !== boardId) continue;
+      for (let ci = 0; ci < (board.cards?.length ?? 0); ci++) {
+        if (board.cards[ci].id === cardId) {
+          return { spaceIdx: si, boardIdx: bi, cardIdx: ci };
         }
       }
     }
@@ -274,8 +273,8 @@ const mergeAddedCardsIntoRemote = (
   const remoteHasCard = (cardId) => {
     if (!cardId) return false;
     return merged.spaces?.some((space) =>
-      space.sections?.some((section) =>
-        section.cards?.some((card) => card.id === cardId),
+      space.boards?.some((board) =>
+        board.cards?.some((card) => card.id === cardId),
       ),
     );
   };
@@ -286,7 +285,7 @@ const mergeAddedCardsIntoRemote = (
 
     const { card } = findCardContext(localState, {
       spaceId: entry.spaceId ?? null,
-      sectionId: entry.sectionId ?? null,
+      boardId: entry.boardId ?? null,
       cardId,
     });
     if (!card) return;
@@ -297,16 +296,16 @@ const mergeAddedCardsIntoRemote = (
       null;
     if (!targetSpace) return;
 
-    let targetSection =
-      targetSpace.sections?.find((section) => section.id === entry.sectionId) ??
-      targetSpace.sections?.[0] ??
+    let targetBoard =
+      targetSpace.boards?.find((board) => board.id === entry.boardId) ??
+      targetSpace.boards?.[0] ??
       null;
-    if (!targetSection) return;
+    if (!targetBoard) return;
 
-    if (!Array.isArray(targetSection.cards)) {
-      targetSection.cards = [];
+    if (!Array.isArray(targetBoard.cards)) {
+      targetBoard.cards = [];
     }
-    targetSection.cards.unshift(JSON.parse(JSON.stringify(card)));
+    targetBoard.cards.unshift(JSON.parse(JSON.stringify(card)));
   });
 
   return merged;
@@ -464,7 +463,7 @@ const renderSpaceTabs = (state) => {
   spaceTabsEl.appendChild(addBtn);
 };
 
-const createCardElement = (card, sectionId, searchTerm, options = {}) => {
+const createCardElement = (card, boardId, searchTerm, options = {}) => {
   const {
     spaceId = null,
     readOnly = false,
@@ -475,7 +474,7 @@ const createCardElement = (card, sectionId, searchTerm, options = {}) => {
   const cardEl = document.createElement("article");
   cardEl.className = "card";
   cardEl.dataset.cardId = card.id;
-  cardEl.dataset.sectionId = sectionId;
+  cardEl.dataset.boardId = boardId;
   cardEl.dataset.spaceId = spaceId ?? "";
   cardEl.dataset.type = card.type;
   cardEl.draggable = !readOnly;
@@ -606,7 +605,7 @@ const createCardElement = (card, sectionId, searchTerm, options = {}) => {
 
   if (!readOnly) {
     cardEl.addEventListener("dragstart", (event) => {
-      draggingCard = { cardId: card.id, sectionId, spaceId };
+      draggingCard = { cardId: card.id, boardId, spaceId };
       cardEl.classList.add("dragging");
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData("text/plain", card.title ?? "card");
@@ -679,7 +678,7 @@ const attachDropTargets = (cardListEl) => {
     if (tabPayload) {
       try {
         const parsed = JSON.parse(tabPayload);
-        addTabCardToSection(cardListEl.dataset.sectionId, parsed);
+        addTabCardToBoard(cardListEl.dataset.boardId, parsed);
       } catch (error) {
         console.warn("Could not parse drop data.", error);
       }
@@ -696,8 +695,8 @@ const attachDropTargets = (cardListEl) => {
     }
     moveCard(
       draggingCard.cardId,
-      draggingCard.sectionId,
-      cardListEl.dataset.sectionId,
+      draggingCard.boardId,
+      cardListEl.dataset.boardId,
       targetIndex,
       draggingCard.spaceId,
       cardListEl.dataset.spaceId || null,
@@ -711,8 +710,8 @@ const attachDropTargets = (cardListEl) => {
 
 const moveCard = (
   cardId,
-  fromSectionId,
-  toSectionId,
+  fromBoardId,
+  toBoardId,
   targetIndex,
   fromSpaceId = null,
   toSpaceId = null,
@@ -728,21 +727,19 @@ const moveCard = (
           : (sourceSpace ?? getActiveSpace(draft));
       if (!sourceSpace || !targetSpace) return;
 
-      const fromSection = findSection(sourceSpace, fromSectionId);
-      const toSection = findSection(targetSpace, toSectionId);
-      if (!fromSection || !toSection) return;
+      const fromBoard = findBoard(sourceSpace, fromBoardId);
+      const toBoard = findBoard(targetSpace, toBoardId);
+      if (!fromBoard || !toBoard) return;
 
-      const cardIndex = fromSection.cards.findIndex(
-        (card) => card.id === cardId,
-      );
+      const cardIndex = fromBoard.cards.findIndex((card) => card.id === cardId);
       if (cardIndex === -1) return;
 
-      const [card] = fromSection.cards.splice(cardIndex, 1);
+      const [card] = fromBoard.cards.splice(cardIndex, 1);
       const normalizedIndex = Math.max(
         0,
-        Math.min(targetIndex, toSection.cards.length),
+        Math.min(targetIndex, toBoard.cards.length),
       );
-      toSection.cards.splice(normalizedIndex, 0, card);
+      toBoard.cards.splice(normalizedIndex, 0, card);
       card.updatedAt = new Date().toISOString();
     },
     { action: "move-card" },
@@ -757,15 +754,15 @@ const moveCardToSpace = (targetSpaceId) => {
     showSnackbar("Card is already in this workspace.");
     return;
   }
-  if (!targetSpace.sections?.length) {
+  if (!targetSpace.boards?.length) {
     showSnackbar("Add a board to that space before moving cards.");
     return;
   }
-  const targetSectionId = targetSpace.sections[0].id;
+  const targetBoardId = targetSpace.boards[0].id;
   moveCard(
     draggingCard.cardId,
-    draggingCard.sectionId,
-    targetSectionId,
+    draggingCard.boardId,
+    targetBoardId,
     0,
     draggingCard.spaceId,
     targetSpaceId,
@@ -777,25 +774,23 @@ const moveCardToSpace = (targetSpaceId) => {
   showSnackbar(`Moved card to ${targetSpace.name}.`);
 };
 
-const moveSection = (sectionId, targetIndex, spaceId = null) => {
+const moveBoard = (boardId, targetIndex, spaceId = null) => {
   updateState(
     (draft) => {
       const space = spaceId
         ? findSpaceById(draft, spaceId)
         : getActiveSpace(draft);
       if (!space) return;
-      const fromIndex = space.sections.findIndex(
-        (section) => section.id === sectionId,
-      );
+      const fromIndex = space.boards.findIndex((board) => board.id === boardId);
       if (fromIndex === -1) return;
-      const [section] = space.sections.splice(fromIndex, 1);
+      const [board] = space.boards.splice(fromIndex, 1);
       const normalizedIndex = Math.max(
         0,
-        Math.min(targetIndex, space.sections.length),
+        Math.min(targetIndex, space.boards.length),
       );
-      space.sections.splice(normalizedIndex, 0, section);
+      space.boards.splice(normalizedIndex, 0, board);
     },
-    { action: "move-section" },
+    { action: "move-board" },
   );
 };
 
@@ -848,12 +843,12 @@ const enableColumnDrag = (column) => {
       return;
     }
     if (event.target.closest(".card")) return;
-    draggingSectionId = column.dataset.sectionId;
+    draggingBoardId = column.dataset.boardId;
     column.classList.add("dragging");
     event.dataTransfer.effectAllowed = "move";
   });
   header.addEventListener("dragend", () => {
-    draggingSectionId = null;
+    draggingBoardId = null;
     column.classList.remove("dragging");
     clearColumnDropTargets();
   });
@@ -882,20 +877,20 @@ const renderBoard = (state, options = {}) => {
 
   const searchTerm = state.preferences.searchTerm?.trim();
 
-  if (!space.sections.length) {
+  if (!space.boards.length) {
     boardEl.classList.add("board-empty");
     appendAddBoardButton();
     return;
   }
 
-  space.sections.forEach((section) => {
+  space.boards.forEach((board) => {
     const column = document.createElement("article");
     column.className = "column";
     column.dataset.spaceId = space.id;
     if (options.animateColumns === false) {
       column.classList.add("column-no-animate");
     }
-    column.dataset.sectionId = section.id;
+    column.dataset.boardId = board.id;
 
     const header = document.createElement("div");
     header.className = "column-header";
@@ -903,8 +898,8 @@ const renderBoard = (state, options = {}) => {
     const title = document.createElement("div");
     title.className = "column-title";
     title.contentEditable = true;
-    title.dataset.sectionId = section.id;
-    title.textContent = section.name;
+    title.dataset.boardId = board.id;
+    title.textContent = board.name;
 
     const metaGroup = document.createElement("div");
     metaGroup.className = "column-meta";
@@ -912,14 +907,14 @@ const renderBoard = (state, options = {}) => {
     const metaButton = document.createElement("button");
     metaButton.type = "button";
     metaButton.className = "column-sites";
-    metaButton.dataset.sectionOpen = section.id;
-    metaButton.textContent = formatCount(section.cards.length);
+    metaButton.dataset.boardOpen = board.id;
+    metaButton.textContent = formatCount(board.cards.length);
     metaGroup.appendChild(metaButton);
 
     const deleteBtn = document.createElement("button");
     deleteBtn.type = "button";
     deleteBtn.className = "column-delete";
-    deleteBtn.dataset.columnDelete = section.id;
+    deleteBtn.dataset.columnDelete = board.id;
     deleteBtn.title = "Delete board";
     deleteBtn.textContent = "×";
     const headerControls = document.createElement("div");
@@ -933,12 +928,12 @@ const renderBoard = (state, options = {}) => {
 
     const cardList = document.createElement("div");
     cardList.className = "card-list";
-    cardList.dataset.sectionId = section.id;
+    cardList.dataset.boardId = board.id;
     cardList.dataset.spaceId = space.id;
     attachDropTargets(cardList);
 
-    section.cards.forEach((card) => {
-      const cardEl = createCardElement(card, section.id, searchTerm, {
+    board.cards.forEach((card) => {
+      const cardEl = createCardElement(card, board.id, searchTerm, {
         animateCards: options.animateCards,
         spaceId: space.id,
       });
@@ -946,7 +941,7 @@ const renderBoard = (state, options = {}) => {
     });
 
     const dropIndicator = document.createElement("div");
-    dropIndicator.className = "section-drop-indicator";
+    dropIndicator.className = "board-drop-indicator";
     cardList.appendChild(dropIndicator);
 
     column.appendChild(cardList);
@@ -954,7 +949,7 @@ const renderBoard = (state, options = {}) => {
     const addCardBtn = document.createElement("button");
     addCardBtn.type = "button";
     addCardBtn.className = "add-card";
-    addCardBtn.dataset.sectionId = section.id;
+    addCardBtn.dataset.boardId = board.id;
     addCardBtn.textContent = "+";
     addCardBtn.setAttribute("aria-label", "Add card");
     column.appendChild(addCardBtn);
@@ -969,13 +964,13 @@ const getFavoriteGroups = (state, searchTerm) =>
   state.spaces
     .map((space) => {
       const cards = [];
-      space.sections.forEach((section) => {
-        section.cards.forEach((card) => {
+      space.boards.forEach((board) => {
+        board.cards.forEach((card) => {
           if (card.favorite && cardMatchesSearch(card, searchTerm)) {
             cards.push({
               card,
-              sectionId: section.id,
-              sectionName: section.name,
+              boardId: board.id,
+              boardName: board.name,
             });
           }
         });
@@ -1070,11 +1065,11 @@ const renderFavoritesBoard = (state) => {
     const cards = document.createElement("div");
     cards.className = "favorites-card-grid";
 
-    group.cards.forEach(({ card, sectionId, sectionName }) => {
-      const cardEl = createCardElement(card, sectionId, searchTerm, {
+    group.cards.forEach(({ card, boardId, boardName }) => {
+      const cardEl = createCardElement(card, boardId, searchTerm, {
         spaceId: group.space.id,
         readOnly: true,
-        originLabel: `${group.space.name} · ${sectionName}`,
+        originLabel: `${group.space.name} · ${boardName}`,
         animateCards: false,
         originAccent: group.space.accent,
       });
@@ -1088,22 +1083,22 @@ const renderFavoritesBoard = (state) => {
   boardEl.appendChild(groupsWrap);
 };
 
-const openCardModal = ({ sectionId, cardId = null, spaceId = null }) => {
-  const { section, card } = findCardContext(currentState, {
+const openCardModal = ({ boardId, cardId = null, spaceId = null }) => {
+  const { board, card } = findCardContext(currentState, {
     spaceId,
-    sectionId,
+    boardId,
     cardId,
   });
   const fallbackSpace = getActiveSpace();
-  const fallbackSectionId = fallbackSpace?.sections?.[0]?.id ?? "";
-  const resolvedSectionId = section?.id ?? sectionId ?? fallbackSectionId;
+  const fallbackBoardId = fallbackSpace?.boards?.[0]?.id ?? "";
+  const resolvedBoardId = board?.id ?? boardId ?? fallbackBoardId;
 
-  if (!resolvedSectionId) {
+  if (!resolvedBoardId) {
     showSnackbar("Create a space first.");
     return;
   }
 
-  cardForm.elements.sectionId.value = resolvedSectionId;
+  cardForm.elements.boardId.value = resolvedBoardId;
   cardForm.elements.cardId.value = cardId ?? "";
 
   if (cardId && card) {
@@ -1115,7 +1110,7 @@ const openCardModal = ({ sectionId, cardId = null, spaceId = null }) => {
     cardDeleteBtn.style.display = "inline-flex";
   } else {
     cardForm.reset();
-    cardForm.elements.sectionId.value = resolvedSectionId;
+    cardForm.elements.boardId.value = resolvedBoardId;
     cardForm.elements.type.value = "note";
     cardForm.elements.url.value = "";
     cardDeleteBtn.style.display = "none";
@@ -1170,8 +1165,7 @@ const handleStateChange = (state) => {
   } else {
     renderBoard(state, {
       animateCards: metaAction !== "move-card",
-      animateColumns:
-        metaAction !== "move-card" && metaAction !== "move-section",
+      animateColumns: metaAction !== "move-card" && metaAction !== "move-board",
     });
     if (addColumnBtn) {
       addColumnBtn.style.display = "inline-flex";
@@ -1465,11 +1459,11 @@ boardEl.addEventListener("click", async (event) => {
   if (cardActionEl) {
     const card = cardActionEl.closest(".card");
     if (card) {
-      const sectionId = card.dataset.sectionId;
+      const boardId = card.dataset.boardId;
       const cardId = card.dataset.cardId;
       const action = cardActionEl.dataset.cardAction;
       const spaceId = card.dataset.spaceId || null;
-      handleCardAction(action, sectionId, cardId, spaceId);
+      handleCardAction(action, boardId, cardId, spaceId);
     }
     return;
   }
@@ -1480,21 +1474,21 @@ boardEl.addEventListener("click", async (event) => {
     return;
   }
 
-  const openGroupBtn = event.target.closest("[data-section-open]");
+  const openGroupBtn = event.target.closest("[data-board-open]");
   if (openGroupBtn) {
-    await openSectionLinks(openGroupBtn.dataset.sectionOpen);
+    await openBoardLinks(openGroupBtn.dataset.boardOpen);
     return;
   }
 
   const addCardBtnEl = event.target.closest(".add-card");
   if (addCardBtnEl) {
-    openCardModal({ sectionId: addCardBtnEl.dataset.sectionId });
+    openCardModal({ boardId: addCardBtnEl.dataset.boardId });
     return;
   }
 
   const deleteColumnEl = event.target.closest("[data-column-delete]");
   if (deleteColumnEl) {
-    const sectionId = deleteColumnEl.dataset.columnDelete;
+    const boardId = deleteColumnEl.dataset.columnDelete;
     const confirmed = await openConfirm(
       "Delete this board? Cards inside will also be removed.",
     );
@@ -1504,9 +1498,7 @@ boardEl.addEventListener("click", async (event) => {
     updateState((draft) => {
       const active = getActiveSpace(draft);
       if (!active) return;
-      active.sections = active.sections.filter(
-        (section) => section.id !== sectionId,
-      );
+      active.boards = active.boards.filter((board) => board.id !== boardId);
     });
     showSnackbar("Board deleted.");
     return;
@@ -1515,14 +1507,14 @@ boardEl.addEventListener("click", async (event) => {
 
 boardEl.addEventListener("focusout", (event) => {
   if (event.target.classList?.contains("column-title")) {
-    const sectionId = event.target.dataset.sectionId;
+    const boardId = event.target.dataset.boardId;
     const newName = event.target.textContent.trim() || DEFAULT_BOARD_NAME;
     event.target.textContent = newName;
     updateState((draft) => {
       const active = getActiveSpace(draft);
       if (!active) return;
-      const section = findSection(active, sectionId);
-      if (section) section.name = newName;
+      const board = findBoard(active, boardId);
+      if (board) board.name = newName;
     });
   }
 });
@@ -1538,7 +1530,7 @@ boardEl.addEventListener("keydown", (event) => {
 });
 
 boardEl.addEventListener("dragover", (event) => {
-  if (!draggingSectionId) return;
+  if (!draggingBoardId) return;
   event.preventDefault();
   const afterElement = getHorizontalAfterElement(
     boardEl,
@@ -1552,7 +1544,7 @@ boardEl.addEventListener("dragover", (event) => {
 });
 
 boardEl.addEventListener("drop", (event) => {
-  if (!draggingSectionId) return;
+  if (!draggingBoardId) return;
   event.preventDefault();
   const afterElement = getHorizontalAfterElement(
     boardEl,
@@ -1563,27 +1555,27 @@ boardEl.addEventListener("drop", (event) => {
   let targetIndex = columns.length;
   if (afterElement) {
     targetIndex = columns.findIndex(
-      (column) => column.dataset.sectionId === afterElement.dataset.sectionId,
+      (column) => column.dataset.boardId === afterElement.dataset.boardId,
     );
   }
   clearColumnDropTargets();
   const draggingColumn = boardEl.querySelector(".column.dragging");
   draggingColumn?.classList.remove("dragging");
-  moveSection(draggingSectionId, targetIndex);
-  draggingSectionId = null;
+  moveBoard(draggingBoardId, targetIndex);
+  draggingBoardId = null;
 });
 
-const handleCardAction = (action, sectionId, cardId, spaceId = null) => {
+const handleCardAction = (action, boardId, cardId, spaceId = null) => {
   const indices = findCardIndices(currentState, {
     spaceId,
-    sectionId,
+    boardId,
     cardId,
   });
   if (!indices) return;
 
   const { card } = findCardContext(currentState, {
     spaceId,
-    sectionId,
+    boardId,
     cardId,
   });
   if (!card) return;
@@ -1592,7 +1584,7 @@ const handleCardAction = (action, sectionId, cardId, spaceId = null) => {
     case "favorite":
       updateState((draft) => {
         const target =
-          draft.spaces[indices.spaceIdx]?.sections[indices.sectionIdx]?.cards[
+          draft.spaces[indices.spaceIdx]?.boards[indices.boardIdx]?.cards[
             indices.cardIdx
           ];
         if (target) {
@@ -1603,7 +1595,7 @@ const handleCardAction = (action, sectionId, cardId, spaceId = null) => {
     case "toggle-done":
       updateState((draft) => {
         const target =
-          draft.spaces[indices.spaceIdx]?.sections[indices.sectionIdx]?.cards[
+          draft.spaces[indices.spaceIdx]?.boards[indices.boardIdx]?.cards[
             indices.cardIdx
           ];
         if (target) {
@@ -1612,14 +1604,13 @@ const handleCardAction = (action, sectionId, cardId, spaceId = null) => {
       });
       break;
     case "edit":
-      openCardModal({ sectionId, cardId, spaceId });
+      openCardModal({ boardId, cardId, spaceId });
       break;
     case "delete":
       updateState((draft) => {
-        const section =
-          draft.spaces[indices.spaceIdx]?.sections[indices.sectionIdx];
-        if (!section) return;
-        section.cards = section.cards.filter((item) => item.id !== cardId);
+        const board = draft.spaces[indices.spaceIdx]?.boards[indices.boardIdx];
+        if (!board) return;
+        board.cards = board.cards.filter((item) => item.id !== cardId);
       });
       showSnackbar("Card deleted.");
       break;
@@ -1629,12 +1620,12 @@ const handleCardAction = (action, sectionId, cardId, spaceId = null) => {
 };
 
 const handleCardPrimaryClick = (cardElement) => {
-  const sectionId = cardElement.dataset.sectionId;
+  const boardId = cardElement.dataset.boardId;
   const cardId = cardElement.dataset.cardId;
   const spaceId = cardElement.dataset.spaceId || null;
   const { card } = findCardContext(currentState, {
     spaceId,
-    sectionId,
+    boardId,
     cardId,
   });
   if (!card) return;
@@ -1643,20 +1634,20 @@ const handleCardPrimaryClick = (cardElement) => {
   }
 };
 
-const addTabCardToSection = (sectionId, tabPayload) => {
-  if (!sectionId || !tabPayload?.url) return;
+const addTabCardToBoard = (boardId, tabPayload) => {
+  if (!boardId || !tabPayload?.url) return;
   const activeSpaceId = getActiveSpace()?.id ?? null;
   const newCardId = generateId("card");
   updateState(
     (draft) => {
       const active = getActiveSpace(draft);
-      const section = findSection(active, sectionId);
-      if (!section) return;
+      const board = findBoard(active, boardId);
+      if (!board) return;
       const favicon = resolveCardFavicon(
         { type: "link", url: tabPayload.url, favicon: tabPayload.favIcon },
         null,
       );
-      section.cards.unshift({
+      board.cards.unshift({
         id: newCardId,
         type: "link",
         title: tabPayload.title?.trim() || tabPayload.url,
@@ -1672,9 +1663,7 @@ const addTabCardToSection = (sectionId, tabPayload) => {
     },
     {
       action: "add-card",
-      addedCards: [
-        { id: newCardId, spaceId: activeSpaceId, sectionId: sectionId },
-      ],
+      addedCards: [{ id: newCardId, spaceId: activeSpaceId, boardId: boardId }],
     },
   );
   showSnackbar("Tab saved as a card.");
@@ -1743,12 +1732,12 @@ const chromeTabGroupsUpdate = (groupId, options) =>
     });
   });
 
-const openSectionLinks = async (sectionId) => {
+const openBoardLinks = async (boardId) => {
   const active = getActiveSpace();
   if (!active) return;
-  const section = findSection(active, sectionId);
-  if (!section) return;
-  const links = section.cards.filter((card) => card.url);
+  const board = findBoard(active, boardId);
+  if (!board) return;
+  const links = board.cards.filter((card) => card.url);
   if (!links.length) {
     showSnackbar("No link cards to open.");
     return;
@@ -1784,13 +1773,13 @@ const openSectionLinks = async (sectionId) => {
       return;
     }
     const groupId = await chromeTabsGroup(tabIds);
-    await chromeTabGroupsUpdate(groupId, { title: section.name });
+    await chromeTabGroupsUpdate(groupId, { title: board.name });
     chrome.tabs.update(tabIds[0], { active: true });
     showSnackbar(
       `Opened ${links.length} link ${links.length === 1 ? "card" : "cards"} as a group in this window.`,
     );
   } catch (error) {
-    console.error("Failed to open section links as group", error);
+    console.error("Failed to open board links as group", error);
     links.forEach((card) => window.open(card.url, "_blank"));
     showSnackbar("Failed to create a tab group; opened in new tabs instead.");
   }
@@ -1804,8 +1793,8 @@ addColumnBtn?.addEventListener("click", () => {
   updateState((draft) => {
     const active = getActiveSpace(draft);
     if (!active) return;
-    active.sections.push({
-      id: generateId("section"),
+    active.boards.push({
+      id: generateId("board"),
       name: "New board",
       cards: [],
     });
@@ -1817,10 +1806,10 @@ boardEl.addEventListener("contextmenu", (event) => {
   const card = event.target.closest(".card");
   if (!card) return;
   event.preventDefault();
-  const sectionId = card.dataset.sectionId;
+  const boardId = card.dataset.boardId;
   const cardId = card.dataset.cardId;
   const spaceId = card.dataset.spaceId || null;
-  openCardModal({ sectionId, cardId, spaceId });
+  openCardModal({ boardId, cardId, spaceId });
 });
 
 cardForm.elements.type.addEventListener("change", (event) => {
@@ -1831,13 +1820,13 @@ cardForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const formData = new FormData(cardForm);
   const cardId = formData.get("cardId");
-  const sectionId = formData.get("sectionId");
-  const existingContext = findCardContext(currentState, { sectionId, cardId });
+  const boardId = formData.get("boardId");
+  const existingContext = findCardContext(currentState, { boardId, cardId });
   const cardType = formData.get("type") ?? "note";
-  const resolvedSectionId =
-    sectionId ||
-    existingContext.section?.id ||
-    getActiveSpace()?.sections?.[0]?.id ||
+  const resolvedBoardId =
+    boardId ||
+    existingContext.board?.id ||
+    getActiveSpace()?.boards?.[0]?.id ||
     "";
   const targetSpaceId =
     existingContext.space?.id ?? getActiveSpace()?.id ?? null;
@@ -1861,7 +1850,7 @@ cardForm.addEventListener("submit", (event) => {
   };
   const favicon = resolveCardFavicon(payload, existingContext?.card);
 
-  if (!payload.title || !resolvedSectionId) {
+  if (!payload.title || !resolvedBoardId) {
     showSnackbar("Please double-check the card information.");
     return;
   }
@@ -1875,7 +1864,7 @@ cardForm.addEventListener("submit", (event) => {
     updateState((draft) => {
       const { card } = findCardContext(draft, {
         spaceId: targetSpaceId,
-        sectionId: resolvedSectionId,
+        boardId: resolvedBoardId,
         cardId,
       });
       if (card) {
@@ -1888,12 +1877,12 @@ cardForm.addEventListener("submit", (event) => {
     const newCardId = generateId("card");
     updateState(
       (draft) => {
-        const { section } = findCardContext(draft, {
+        const { board } = findCardContext(draft, {
           spaceId: targetSpaceId,
-          sectionId: resolvedSectionId,
+          boardId: resolvedBoardId,
         });
-        if (section) {
-          section.cards.unshift({
+        if (board) {
+          board.cards.unshift({
             id: newCardId,
             favorite: false,
             done: false,
@@ -1910,7 +1899,7 @@ cardForm.addEventListener("submit", (event) => {
           {
             id: newCardId,
             spaceId: targetSpaceId,
-            sectionId: resolvedSectionId,
+            boardId: resolvedBoardId,
           },
         ],
       },
@@ -1923,18 +1912,18 @@ cardForm.addEventListener("submit", (event) => {
 
 cardDeleteBtn.addEventListener("click", () => {
   const cardId = cardForm.elements.cardId.value;
-  const sectionId = cardForm.elements.sectionId.value;
-  if (!cardId || !sectionId) return;
+  const boardId = cardForm.elements.boardId.value;
+  if (!cardId || !boardId) return;
   const targetSpaceId =
-    findCardContext(currentState, { sectionId, cardId }).space?.id ?? null;
+    findCardContext(currentState, { boardId, cardId }).space?.id ?? null;
   updateState((draft) => {
-    const { section } = findCardContext(draft, {
+    const { board } = findCardContext(draft, {
       spaceId: targetSpaceId,
-      sectionId,
+      boardId,
       cardId,
     });
-    if (section) {
-      section.cards = section.cards.filter((card) => card.id !== cardId);
+    if (board) {
+      board.cards = board.cards.filter((card) => card.id !== cardId);
     }
   });
   closeModal(cardModalEl);
@@ -1967,7 +1956,7 @@ spaceForm.addEventListener("submit", (event) => {
         id: newSpaceId,
         name,
         accent: getRandomAccent(),
-        sections: [],
+        boards: [],
       });
       draft.preferences.activeSpaceId = newSpaceId;
     });

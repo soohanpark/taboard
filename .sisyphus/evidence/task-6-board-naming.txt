@@ -1,0 +1,95 @@
+newtab/app.js:136:const findBoard = (space, boardId) =>
+newtab/app.js:137:  space?.boards?.find((board) => board.id === boardId) ?? null;
+newtab/app.js:144:  { spaceId = null, boardId = null, cardId = null },
+newtab/app.js:149:      candidate.boards?.some((board) => board.id === boardId),
+newtab/app.js:152:      candidate.boards?.some((board) =>
+newtab/app.js:158:  let board = space?.boards?.find((item) => item.id === boardId) ?? null;
+newtab/app.js:160:    board = space.boards?.find((item) =>
+newtab/app.js:171:  { spaceId = null, boardId = null, cardId = null },
+newtab/app.js:176:    for (let bi = 0; bi < (space.boards?.length ?? 0); bi++) {
+newtab/app.js:177:      const board = space.boards[bi];
+newtab/app.js:178:      if (boardId && board.id !== boardId) continue;
+newtab/app.js:181:          return { spaceIdx: si, boardIdx: bi, cardIdx: ci };
+newtab/app.js:276:      space.boards?.some((board) =>
+newtab/app.js:288:      boardId: entry.boardId ?? null,
+newtab/app.js:300:      targetSpace.boards?.find((board) => board.id === entry.boardId) ??
+newtab/app.js:301:      targetSpace.boards?.[0] ??
+newtab/app.js:466:const createCardElement = (card, boardId, searchTerm, options = {}) => {
+newtab/app.js:477:  cardEl.dataset.boardId = boardId;
+newtab/app.js:608:      draggingCard = { cardId: card.id, boardId, spaceId };
+newtab/app.js:681:        addTabCardToBoard(cardListEl.dataset.boardId, parsed);
+newtab/app.js:698:      draggingCard.boardId,
+newtab/app.js:699:      cardListEl.dataset.boardId,
+newtab/app.js:730:      const fromBoard = findBoard(sourceSpace, fromBoardId);
+newtab/app.js:731:      const toBoard = findBoard(targetSpace, toBoardId);
+newtab/app.js:757:  if (!targetSpace.boards?.length) {
+newtab/app.js:761:  const targetBoardId = targetSpace.boards[0].id;
+newtab/app.js:764:    draggingCard.boardId,
+newtab/app.js:777:const moveBoard = (boardId, targetIndex, spaceId = null) => {
+newtab/app.js:784:      const fromIndex = space.boards.findIndex((board) => board.id === boardId);
+newtab/app.js:786:      const [board] = space.boards.splice(fromIndex, 1);
+newtab/app.js:789:        Math.min(targetIndex, space.boards.length),
+newtab/app.js:791:      space.boards.splice(normalizedIndex, 0, board);
+newtab/app.js:846:    draggingBoardId = column.dataset.boardId;
+newtab/app.js:880:  if (!space.boards.length) {
+newtab/app.js:886:  space.boards.forEach((board) => {
+newtab/app.js:893:    column.dataset.boardId = board.id;
+newtab/app.js:901:    title.dataset.boardId = board.id;
+newtab/app.js:931:    cardList.dataset.boardId = board.id;
+newtab/app.js:952:    addCardBtn.dataset.boardId = board.id;
+newtab/app.js:967:      space.boards.forEach((board) => {
+newtab/app.js:972:              boardId: board.id,
+newtab/app.js:1068:    group.cards.forEach(({ card, boardId, boardName }) => {
+newtab/app.js:1069:      const cardEl = createCardElement(card, boardId, searchTerm, {
+newtab/app.js:1086:const openCardModal = ({ boardId, cardId = null, spaceId = null }) => {
+newtab/app.js:1089:    boardId,
+newtab/app.js:1093:  const fallbackBoardId = fallbackSpace?.boards?.[0]?.id ?? "";
+newtab/app.js:1094:  const resolvedBoardId = board?.id ?? boardId ?? fallbackBoardId;
+newtab/app.js:1101:  cardForm.elements.boardId.value = resolvedBoardId;
+newtab/app.js:1113:    cardForm.elements.boardId.value = resolvedBoardId;
+newtab/app.js:1462:      const boardId = card.dataset.boardId;
+newtab/app.js:1466:      handleCardAction(action, boardId, cardId, spaceId);
+newtab/app.js:1485:    openCardModal({ boardId: addCardBtnEl.dataset.boardId });
+newtab/app.js:1491:    const boardId = deleteColumnEl.dataset.columnDelete;
+newtab/app.js:1501:      active.boards = active.boards.filter((board) => board.id !== boardId);
+newtab/app.js:1510:    const boardId = event.target.dataset.boardId;
+newtab/app.js:1516:      const board = findBoard(active, boardId);
+newtab/app.js:1558:      (column) => column.dataset.boardId === afterElement.dataset.boardId,
+newtab/app.js:1568:const handleCardAction = (action, boardId, cardId, spaceId = null) => {
+newtab/app.js:1571:    boardId,
+newtab/app.js:1578:    boardId,
+newtab/app.js:1587:          draft.spaces[indices.spaceIdx]?.boards[indices.boardIdx]?.cards[
+newtab/app.js:1598:          draft.spaces[indices.spaceIdx]?.boards[indices.boardIdx]?.cards[
+newtab/app.js:1607:      openCardModal({ boardId, cardId, spaceId });
+newtab/app.js:1611:        const board = draft.spaces[indices.spaceIdx]?.boards[indices.boardIdx];
+newtab/app.js:1623:  const boardId = cardElement.dataset.boardId;
+newtab/app.js:1628:    boardId,
+newtab/app.js:1637:const addTabCardToBoard = (boardId, tabPayload) => {
+newtab/app.js:1638:  if (!boardId || !tabPayload?.url) return;
+newtab/app.js:1644:      const board = findBoard(active, boardId);
+newtab/app.js:1666:      addedCards: [{ id: newCardId, spaceId: activeSpaceId, boardId: boardId }],
+newtab/app.js:1735:const openBoardLinks = async (boardId) => {
+newtab/app.js:1738:  const board = findBoard(active, boardId);
+newtab/app.js:1796:    active.boards.push({
+newtab/app.js:1809:  const boardId = card.dataset.boardId;
+newtab/app.js:1812:  openCardModal({ boardId, cardId, spaceId });
+newtab/app.js:1823:  const boardId = formData.get("boardId");
+newtab/app.js:1824:  const existingContext = findCardContext(currentState, { boardId, cardId });
+newtab/app.js:1827:    boardId ||
+newtab/app.js:1829:    getActiveSpace()?.boards?.[0]?.id ||
+newtab/app.js:1867:        boardId: resolvedBoardId,
+newtab/app.js:1882:          boardId: resolvedBoardId,
+newtab/app.js:1902:            boardId: resolvedBoardId,
+newtab/app.js:1915:  const boardId = cardForm.elements.boardId.value;
+newtab/app.js:1916:  if (!cardId || !boardId) return;
+newtab/app.js:1918:    findCardContext(currentState, { boardId, cardId }).space?.id ?? null;
+newtab/app.js:1922:      boardId,
+newtab/state.js:146:        next.spaces[0]?.boards?.[0]?.id ??
+newtab/state.js:168:      activeSpace?.boards?.[0]?.id ??
+newtab/state.js:170:      next.spaces[0]?.boards?.[0]?.id ??
+newtab/state.js:174:    const exists = activeSpace.boards?.some(
+newtab/state.js:178:      next.preferences.captureBoardId = activeSpace.boards?.[0]?.id ?? null;
+newtab/state.js:186:      if (!space.boards && space.sections) {
+newtab/state.js:187:        space.boards = space.sections;
+newtab/state.js:195:        boards: Array.isArray(space.boards)
+newtab/state.js:196:          ? space.boards

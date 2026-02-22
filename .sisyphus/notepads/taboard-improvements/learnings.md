@@ -228,3 +228,36 @@ Work session started. Plan has 21 tasks + 4 final verification tasks in 6 waves.
 - Defensive filtering at each nesting level prevents cascading null errors
 - Object.freeze() in notify() ensures listeners receive immutable snapshots
 - structuredClone() is already the primary path (no refactoring needed)
+
+
+## [2026-02-22] Task 6: section→board naming unification — COMPLETED
+
+### Changes Made
+- Renamed state schema from `space.sections[]` to `space.boards[]` across runtime state and app usage.
+- Added backward compatibility migration in `normalizeState()`:
+  - `if (!space.boards && space.sections) { space.boards = space.sections; delete space.sections; }`
+- Renamed core app identifiers and APIs:
+  - `findSection` → `findBoard`
+  - `moveSection` → `moveBoard`
+  - `addTabCardToSection` → `addTabCardToBoard`
+  - `openSectionLinks` → `openBoardLinks`
+  - `sectionId`/`sections` → `boardId`/`boards`
+- Updated DOM data/form naming:
+  - `name="sectionId"` → `name="boardId"`
+  - `data-section-open` → `data-board-open`
+  - dataset bindings updated to `dataset.boardId` / `dataset.boardOpen`
+- Updated CSS indicator selector:
+  - `.section-drop-indicator` → `.board-drop-indicator`
+
+### Compatibility Notes
+- Existing stored user data using `space.sections` is migrated on load without data loss.
+- Preference migration keeps compatibility for prior `captureSectionId` by mapping to `captureBoardId` during normalization.
+
+### Verification
+- ✅ `grep -rn "sectionId\|findSection\|\.sections" newtab/*.js` only matches migration/backward-compat paths in `state.js`
+- ✅ `grep -rn "boardId\|findBoard\|\.boards" newtab/*.js` returns broad usage across app/state
+- ✅ LSP diagnostics clean for changed files (`app.js`, `state.js`, `index.html`, `style.css`)
+- ✅ JavaScript syntax check passed (`node --check`)
+- ✅ Evidence files saved:
+  - `.sisyphus/evidence/task-6-no-section-naming.txt`
+  - `.sisyphus/evidence/task-6-board-naming.txt`
