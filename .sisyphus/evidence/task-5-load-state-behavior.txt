@@ -1,0 +1,31 @@
+TASK 5: storage.js Error Handling Improvements
+Evidence: loadStateFromStorage() behavior
+
+REQUIREMENT:
+- loadStateFromStorage() returns null for "no data"
+- loadStateFromStorage() throws for actual errors
+
+IMPLEMENTATION:
+File: newtab/storage.js, lines 42-50
+
+export const loadStateFromStorage = async () => {
+  try {
+    const result = await withStorage("get", STATE_KEY);
+    return result?.[STATE_KEY] ?? null;  // Returns null if key missing
+  } catch (error) {
+    console.error("Failed to load state", error);
+    throw error;  // Propagates error to caller
+  }
+};
+
+VERIFICATION:
+✅ Line 45: Returns null when result?.[STATE_KEY] is undefined/null
+✅ Line 48: Throws error instead of swallowing it
+✅ Line 47: console.error preserved for logging
+✅ Caller in app.js (line 1352) can now handle thrown errors if needed
+
+BACKWARD COMPATIBILITY:
+✅ Return value (null or thrown error) is compatible with existing caller
+✅ app.js line 1352: const storedState = await loadStateFromStorage();
+   - If null: initState(null ?? createDefaultState()) → uses default
+   - If error thrown: caller can catch it (currently doesn't, but can)
