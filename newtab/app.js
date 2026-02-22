@@ -29,7 +29,6 @@ import {
   VIEW_MODES,
   FALLBACK_FAVICON,
   DEFAULT_BOARD_NAME,
-  SNACKBAR_DURATION_MS,
 } from "./constants.js";
 import {
   renderSpaceTabs,
@@ -38,11 +37,18 @@ import {
   resolveCardFavicon,
 } from "./render.js";
 import {
-  getDragAfterElement,
+  showSnackbar,
+  hideSnackbar,
+  openConfirm,
+  openCardModal,
+  closeModal,
+  openSpaceModal,
+  initModals,
+} from "./modals.js";
+import {
   getHorizontalAfterElement,
   attachDropTargets,
   enableColumnDrag,
-  moveCard,
   moveCardToSpace,
   moveBoard,
   moveSpace,
@@ -62,16 +68,6 @@ import {
 const boardEl = document.getElementById("board");
 const spaceTabsEl = document.getElementById("space-tabs");
 const addColumnBtn = document.getElementById("add-column");
-const cardModalEl = document.getElementById("card-modal");
-const cardForm = document.getElementById("card-form");
-const cardDeleteBtn = cardForm.querySelector("[data-delete-card]");
-const cardNoteField = cardForm.querySelector("[data-card-field='note']");
-const cardUrlField = cardForm.querySelector("[data-card-field='url']");
-const cardUrlInput = cardForm.elements.url;
-const spaceModalEl = document.getElementById("space-modal");
-const spaceForm = document.getElementById("space-form");
-const spaceDeleteBtn = spaceForm.querySelector("[data-delete-space]");
-const snackbarEl = document.getElementById("snackbar");
 const tabListEl = document.getElementById("tab-list");
 const tabCountEl = document.getElementById("tab-count");
 const tabFilterInput = document.getElementById("tab-filter");
@@ -82,21 +78,15 @@ const driveControl = document.getElementById("drive-control");
 const driveConnectBtn = document.getElementById("drive-connect");
 const driveMenuSyncBtn = document.getElementById("drive-menu-sync");
 const driveMenuDisconnectBtn = document.getElementById("drive-menu-disconnect");
-const confirmModalEl = document.getElementById("confirm-modal");
-const confirmMessageEl = document.getElementById("confirm-message");
-const confirmAcceptBtn = document.getElementById("confirm-accept");
-const confirmCancelBtn = document.getElementById("confirm-cancel");
 
 let currentState = null;
 let saveTimer = null;
 let driveTimer = null;
-let snackbarTimer = null;
 let searchDebounceTimer = null;
 let openTabs = [];
 let tabFilter = "";
 const cleanupTabListeners = [];
 let driveSyncIntervalId = null;
-let confirmResolver = null;
 
 const getActiveSpace = (state = currentState) => {
   if (!state?.spaces?.length) return null;
@@ -157,43 +147,6 @@ const findCardIndices = (
     }
   }
   return null;
-};
-
-const hideSnackbar = () => {
-  clearTimeout(snackbarTimer);
-  snackbarEl.classList.remove("visible");
-  snackbarEl.setAttribute("aria-hidden", "true");
-  snackbarEl.textContent = "";
-};
-
-const showSnackbar = (message, duration = SNACKBAR_DURATION_MS) => {
-  if (!message) {
-    hideSnackbar();
-    return;
-  }
-  clearTimeout(snackbarTimer);
-  snackbarEl.textContent = message;
-  snackbarEl.classList.add("visible");
-  snackbarEl.setAttribute("aria-hidden", "false");
-  snackbarTimer = setTimeout(() => hideSnackbar(), duration);
-};
-
-hideSnackbar();
-
-const openConfirm = (message) =>
-  new Promise((resolve) => {
-    confirmResolver = resolve;
-    confirmMessageEl.textContent = message;
-    confirmModalEl.classList.remove("hidden");
-    confirmModalEl.classList.add("visible");
-    confirmModalEl.setAttribute("aria-hidden", "false");
-  });
-
-const closeConfirm = () => {
-  confirmModalEl.classList.add("hidden");
-  confirmModalEl.classList.remove("visible");
-  confirmModalEl.setAttribute("aria-hidden", "true");
-  confirmResolver = null;
 };
 
 const schedulePersist = (state) => {
@@ -373,19 +326,6 @@ const stopDriveBackgroundSync = () => {
   driveSyncInFlight = false;
 };
 
-const updateCardFormFields = (type) => {
-  const isLink = type === "link";
-  if (cardNoteField) {
-    cardNoteField.style.display = isLink ? "none" : "";
-  }
-  if (cardUrlField) {
-    cardUrlField.style.display = isLink ? "" : "none";
-  }
-  if (cardUrlInput) {
-    cardUrlInput.required = isLink;
-  }
-};
-
 const handleCardDragStart = ({
   cardId,
   boardId,
@@ -403,73 +343,6 @@ const handleCardDragStart = ({
 const handleCardDragEnd = ({ cardEl }) => {
   setDraggingCard(null);
   cardEl.classList.remove("dragging");
-};
-
-const openCardModal = ({ boardId, cardId = null, spaceId = null }) => {
-  const { board, card } = findCardContext(currentState, {
-    spaceId,
-    boardId,
-    cardId,
-  });
-  const fallbackSpace = getActiveSpace();
-  const fallbackBoardId = fallbackSpace?.boards?.[0]?.id ?? "";
-  const resolvedBoardId = board?.id ?? boardId ?? fallbackBoardId;
-
-  if (!resolvedBoardId) {
-    showSnackbar("Create a space first.");
-    return;
-  }
-
-  cardForm.elements.boardId.value = resolvedBoardId;
-  cardForm.elements.cardId.value = cardId ?? "";
-
-  if (cardId && card) {
-    cardForm.elements.title.value = card.title;
-    cardForm.elements.type.value = card.type ?? "note";
-    cardForm.elements.note.value = card.note ?? "";
-    cardForm.elements.url.value = card.url ?? "";
-    cardForm.elements.tags.value = card.tags?.join(", ") ?? "";
-    cardDeleteBtn.style.display = "inline-flex";
-  } else {
-    cardForm.reset();
-    cardForm.elements.boardId.value = resolvedBoardId;
-    cardForm.elements.type.value = "note";
-    cardForm.elements.url.value = "";
-    cardDeleteBtn.style.display = "none";
-  }
-
-  updateCardFormFields(cardForm.elements.type.value);
-
-  cardModalEl.classList.add("visible");
-  cardModalEl.classList.remove("hidden");
-  cardModalEl.setAttribute("aria-hidden", "false");
-};
-
-const closeModal = (modal) => {
-  modal.classList.add("hidden");
-  modal.classList.remove("visible");
-  modal.setAttribute("aria-hidden", "true");
-};
-
-const openSpaceModal = (spaceId = null) => {
-  if (!currentState) return;
-  if (spaceId) {
-    const space = currentState.spaces.find((item) => item.id === spaceId);
-    if (space) {
-      spaceForm.elements.spaceId.value = space.id;
-      spaceForm.elements.name.value = space.name;
-    }
-    spaceDeleteBtn.style.display =
-      currentState.spaces.length > 1 ? "inline-flex" : "none";
-  } else {
-    spaceForm.reset();
-    spaceForm.elements.spaceId.value = "";
-    spaceDeleteBtn.style.display = "none";
-  }
-
-  spaceModalEl.classList.add("visible");
-  spaceModalEl.classList.remove("hidden");
-  spaceModalEl.setAttribute("aria-hidden", "false");
 };
 
 const handleStateChange = (state) => {
@@ -675,6 +548,17 @@ const registerTabObservers = () => {
 };
 
 const bootstrap = async () => {
+  hideSnackbar();
+  initModals({
+    addCard,
+    editCard,
+    deleteCard,
+    addSpace,
+    editSpace,
+    deleteSpace,
+    closeModal,
+    resolveCardFavicon,
+  });
   subscribe(handleStateChange);
   subscribeDrive(handleDriveUpdate);
   const storedState = await loadStateFromStorage();
@@ -1007,6 +891,89 @@ const addTabCardToBoard = (boardId, tabPayload) => {
   showSnackbar("Tab saved as a card.");
 };
 
+const editCard = ({ cardId, boardId, spaceId, payload, favicon }) => {
+  updateState((draft) => {
+    const { card } = findCardContext(draft, {
+      spaceId,
+      boardId,
+      cardId,
+    });
+    if (card) {
+      Object.assign(card, payload, { favicon });
+      card.updatedAt = new Date().toISOString();
+    }
+  });
+};
+
+const addCard = ({ boardId, spaceId, payload, favicon }) => {
+  const cardId = generateId("card");
+  updateState(
+    (draft) => {
+      const { board } = findCardContext(draft, {
+        spaceId,
+        boardId,
+      });
+      if (board) {
+        board.cards.unshift({
+          id: cardId,
+          favorite: false,
+          done: false,
+          favicon,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          ...payload,
+        });
+      }
+    },
+    {
+      action: "add-card",
+      addedCards: [{ id: cardId, spaceId, boardId }],
+    },
+  );
+};
+
+const deleteCard = ({ cardId, boardId, spaceId }) => {
+  updateState((draft) => {
+    const { board } = findCardContext(draft, {
+      spaceId,
+      boardId,
+      cardId,
+    });
+    if (board) {
+      board.cards = board.cards.filter((card) => card.id !== cardId);
+    }
+  });
+};
+
+const editSpace = ({ spaceId, name }) => {
+  updateState((draft) => {
+    const space = draft.spaces.find((item) => item.id === spaceId);
+    if (space) space.name = name;
+  });
+};
+
+const addSpace = ({ name }) => {
+  const spaceId = generateId("space");
+  updateState((draft) => {
+    draft.spaces.push({
+      id: spaceId,
+      name,
+      accent: getRandomAccent(),
+      boards: [],
+    });
+    draft.preferences.activeSpaceId = spaceId;
+  });
+};
+
+const deleteSpace = ({ spaceId }) => {
+  updateState((draft) => {
+    draft.spaces = draft.spaces.filter((space) => space.id !== spaceId);
+    if (draft.preferences.activeSpaceId === spaceId) {
+      draft.preferences.activeSpaceId = draft.spaces[0]?.id ?? null;
+    }
+  });
+};
+
 const getCurrentWindowId = () =>
   new Promise((resolve) => {
     if (!chrome?.windows?.getCurrent) {
@@ -1150,206 +1117,6 @@ boardEl.addEventListener("contextmenu", (event) => {
   openCardModal({ boardId, cardId, spaceId });
 });
 
-cardForm.elements.type.addEventListener("change", (event) => {
-  updateCardFormFields(event.target.value);
-});
-
-cardForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const formData = new FormData(cardForm);
-  const cardId = formData.get("cardId");
-  const boardId = formData.get("boardId");
-  const existingContext = findCardContext(currentState, { boardId, cardId });
-  const cardType = formData.get("type") ?? "note";
-  const resolvedBoardId =
-    boardId ||
-    existingContext.board?.id ||
-    getActiveSpace()?.boards?.[0]?.id ||
-    "";
-  const targetSpaceId =
-    existingContext.space?.id ?? getActiveSpace()?.id ?? null;
-
-  const payload = {
-    title: formData.get("title")?.toString().trim(),
-    type: cardType,
-    note:
-      cardType === "link"
-        ? ""
-        : (formData.get("note")?.toString().trim() ?? ""),
-    url:
-      cardType === "link" ? (formData.get("url")?.toString().trim() ?? "") : "",
-    tags:
-      formData
-        .get("tags")
-        ?.toString()
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean) ?? [],
-  };
-  const favicon = resolveCardFavicon(payload, existingContext?.card);
-
-  if (!payload.title || !resolvedBoardId) {
-    showSnackbar("Please double-check the card information.");
-    return;
-  }
-
-  if (payload.type === "link" && !payload.url) {
-    showSnackbar("Please enter a link.");
-    return;
-  }
-
-  if (cardId) {
-    updateState((draft) => {
-      const { card } = findCardContext(draft, {
-        spaceId: targetSpaceId,
-        boardId: resolvedBoardId,
-        cardId,
-      });
-      if (card) {
-        Object.assign(card, payload, { favicon });
-        card.updatedAt = new Date().toISOString();
-      }
-    });
-    showSnackbar("Card updated.");
-  } else {
-    const newCardId = generateId("card");
-    updateState(
-      (draft) => {
-        const { board } = findCardContext(draft, {
-          spaceId: targetSpaceId,
-          boardId: resolvedBoardId,
-        });
-        if (board) {
-          board.cards.unshift({
-            id: newCardId,
-            favorite: false,
-            done: false,
-            favicon,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            ...payload,
-          });
-        }
-      },
-      {
-        action: "add-card",
-        addedCards: [
-          {
-            id: newCardId,
-            spaceId: targetSpaceId,
-            boardId: resolvedBoardId,
-          },
-        ],
-      },
-    );
-    showSnackbar("Card added.");
-  }
-
-  closeModal(cardModalEl);
-});
-
-cardDeleteBtn.addEventListener("click", () => {
-  const cardId = cardForm.elements.cardId.value;
-  const boardId = cardForm.elements.boardId.value;
-  if (!cardId || !boardId) return;
-  const targetSpaceId =
-    findCardContext(currentState, { boardId, cardId }).space?.id ?? null;
-  updateState((draft) => {
-    const { board } = findCardContext(draft, {
-      spaceId: targetSpaceId,
-      boardId,
-      cardId,
-    });
-    if (board) {
-      board.cards = board.cards.filter((card) => card.id !== cardId);
-    }
-  });
-  closeModal(cardModalEl);
-  showSnackbar("Card deleted.");
-});
-
-cardModalEl.addEventListener("click", (event) => {
-  if (event.target.dataset.close === "card") {
-    closeModal(cardModalEl);
-  }
-});
-
-spaceForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const formData = new FormData(spaceForm);
-  const spaceId = formData.get("spaceId");
-  const name = formData.get("name")?.toString().trim();
-  if (!name) return;
-
-  if (spaceId) {
-    updateState((draft) => {
-      const space = draft.spaces.find((item) => item.id === spaceId);
-      if (space) space.name = name;
-    });
-    showSnackbar("Space updated.");
-  } else {
-    const newSpaceId = generateId("space");
-    updateState((draft) => {
-      draft.spaces.push({
-        id: newSpaceId,
-        name,
-        accent: getRandomAccent(),
-        boards: [],
-      });
-      draft.preferences.activeSpaceId = newSpaceId;
-    });
-    showSnackbar("Space created.");
-  }
-
-  closeModal(spaceModalEl);
-});
-
-spaceDeleteBtn.addEventListener("click", () => {
-  const spaceId = spaceForm.elements.spaceId.value;
-  if (!spaceId || !currentState) return;
-  if (currentState.spaces.length <= 1) {
-    showSnackbar("At least one space is required.");
-    return;
-  }
-  updateState((draft) => {
-    draft.spaces = draft.spaces.filter((space) => space.id !== spaceId);
-    if (draft.preferences.activeSpaceId === spaceId) {
-      draft.preferences.activeSpaceId = draft.spaces[0]?.id ?? null;
-    }
-  });
-  closeModal(spaceModalEl);
-  showSnackbar("Space deleted.");
-});
-
-spaceModalEl.addEventListener("click", (event) => {
-  if (event.target.dataset.close === "space") {
-    closeModal(spaceModalEl);
-  }
-});
-
-confirmModalEl.addEventListener("click", (event) => {
-  if (event.target.dataset.close === "confirm") {
-    if (confirmResolver) {
-      confirmResolver(false);
-    }
-    closeConfirm();
-  }
-});
-
-confirmAcceptBtn.addEventListener("click", () => {
-  if (confirmResolver) {
-    confirmResolver(true);
-  }
-  closeConfirm();
-});
-
-confirmCancelBtn.addEventListener("click", () => {
-  if (confirmResolver) {
-    confirmResolver(false);
-  }
-  closeConfirm();
-});
-
 const focusSearchInput = () => {
   searchInput.focus();
   searchInput.select();
@@ -1367,16 +1134,6 @@ window.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
     event.preventDefault();
     focusSearchInput();
-  }
-  if (event.key === "Escape") {
-    if (cardModalEl.classList.contains("visible")) closeModal(cardModalEl);
-    if (spaceModalEl.classList.contains("visible")) closeModal(spaceModalEl);
-    if (confirmModalEl.classList.contains("visible")) {
-      if (confirmResolver) {
-        confirmResolver(false);
-      }
-      closeConfirm();
-    }
   }
 });
 

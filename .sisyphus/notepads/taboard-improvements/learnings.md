@@ -314,3 +314,30 @@ Work session started. Plan has 21 tasks + 4 final verification tasks in 6 waves.
 - ✅ `node --check newtab/drag.js && node --check newtab/app.js`
 - ✅ LSP diagnostics clean for changed files (`newtab/drag.js`, `newtab/app.js`)
 - ✅ Evidence file saved: `.sisyphus/evidence/task-8-drag-exports.txt`
+
+## [2026-02-22] Task 9: modals module extraction — COMPLETED
+
+### Changes Made
+- Created `newtab/modals.js` and moved modal/snackbar/confirm/form handling out of `app.js`.
+- Extracted modal-specific DOM refs and state into module scope:
+  - DOM refs: card/space modal + forms, snackbar, confirm dialog elements
+  - State vars: `snackbarTimer`, `confirmResolver`
+- Exported modal APIs from `modals.js`:
+  - `showSnackbar`, `hideSnackbar`, `openConfirm`, `openCardModal`, `closeModal`, `openSpaceModal`, `initModals`
+- Moved modal/form event wiring into `initModals(callbacks)`:
+  - Card form submit + delete
+  - Space form submit + delete
+  - Modal close button handlers
+  - Confirm accept/cancel/click-out handlers
+  - Escape key close behavior for visible modals
+- Updated `newtab/app.js` to import modal APIs and initialize `initModals(...)` with injected mutation callbacks (`addCard`, `editCard`, `deleteCard`, `addSpace`, `editSpace`, `deleteSpace`) to avoid circular imports.
+
+### Key Learnings
+- Callback injection remains the cleanest anti-circular pattern when splitting UI modules that still trigger state mutations.
+- Keeping `openCardModal`/`openSpaceModal` state lookups inside `modals.js` via `getState()` avoids leaking transient app-local state.
+- Moving Escape handling alongside confirm resolver state prevents cross-module coupling to modal internals.
+
+### Verification
+- ✅ `node --check newtab/modals.js && node --check newtab/app.js`
+- ✅ LSP diagnostics clean for changed files (`newtab/modals.js`, `newtab/app.js`)
+- ✅ Evidence file saved: `.sisyphus/evidence/task-9-modals-exports.txt`
