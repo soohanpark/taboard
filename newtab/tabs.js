@@ -233,4 +233,21 @@ export const initTabs = (callbacks = {}) => {
     const tabId = Number(item.dataset.tabId);
     safeTabsUpdate(tabId);
   });
+
+  tabListEl?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const closeBtn = event.target.closest(".tab-close");
+    if (closeBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      const tabId = Number(closeBtn.dataset.closeTabId);
+      closeBrowserTab(tabId);
+      return;
+    }
+    const item = event.target.closest(".tab-item");
+    if (!item) return;
+      event.preventDefault();
+    const tabId = Number(item.dataset.tabId);
+    safeTabsUpdate(tabId);
+  });
 };

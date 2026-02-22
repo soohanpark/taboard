@@ -1292,6 +1292,38 @@ body {
   transform: scale(0.97);
 }
 
+/* ========================================
+   Loading & Feedback States (T17)
+   ======================================== */
+button:disabled,
+button[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.loading-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: var(--radius-full);
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
+  margin-right: var(--space-2);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.input-error {
+  border-color: var(--color-red) !important;
+  background: rgba(255, 59, 48, 0.04) !important;
+  box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.12) !important;
+}
+
 .snackbar {
   position: fixed;
   bottom: 32px;
@@ -1340,6 +1372,23 @@ body {
 
 button:active {
   transform: scale(0.98);
+}
+
+/* ========================================
+   Accessibility — Focus Visible
+   ======================================== */
+.space-tab:focus-visible,
+.tab-item:focus-visible,
+.card:focus-visible,
+.add-card:focus-visible,
+.add-column:focus-visible,
+.column-delete:focus-visible,
+.card-floating-button:focus-visible,
+.icon-button:focus-visible,
+.ghost-button:focus-visible,
+.drive-menu-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ========================================
@@ -1437,7 +1486,7 @@ button:active {
     /* Semantic Colors - Dark */
     --text-primary: #f5f5f7;
     --text-secondary: #a1a1a6;
-    --text-tertiary: #6e6e73;
+    --text-tertiary: #8e8e93;
 
     /* Background - Dark */
     --bg-primary: #1c1c1e;

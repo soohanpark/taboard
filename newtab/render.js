@@ -175,6 +175,7 @@ export const createCardElement = (card, boardId, searchTerm, options = {}) => {
     doneButton.className = "card-floating-button card-done-button";
     doneButton.dataset.cardAction = "toggle-done";
     doneButton.title = card.done ? "Mark incomplete" : "Mark complete";
+    doneButton.setAttribute("aria-label", card.done ? "Mark incomplete" : "Mark complete");
     doneButton.textContent = card.done ? "✔" : "☐";
     if (card.done) {
       doneButton.classList.add("is-done");
@@ -188,6 +189,7 @@ export const createCardElement = (card, boardId, searchTerm, options = {}) => {
   editIcon.dataset.cardAction = "edit";
   editIcon.title = "Edit";
   editIcon.textContent = "✎";
+  editIcon.setAttribute("aria-label", "Edit card");
   floating.appendChild(editIcon);
 
   const favoriteIcon = document.createElement("button");
@@ -196,6 +198,7 @@ export const createCardElement = (card, boardId, searchTerm, options = {}) => {
   favoriteIcon.dataset.cardAction = "favorite";
   favoriteIcon.title = card.favorite ? "Unfavorite" : "Favorite";
   favoriteIcon.textContent = card.favorite ? "★" : "☆";
+  favoriteIcon.setAttribute("aria-label", card.favorite ? "Unfavorite" : "Favorite");
   if (card.favorite) {
     favoriteIcon.classList.add("is-active");
   }
@@ -207,6 +210,7 @@ export const createCardElement = (card, boardId, searchTerm, options = {}) => {
   deleteIcon.dataset.cardAction = "delete";
   deleteIcon.title = "Delete";
   deleteIcon.textContent = "×";
+  deleteIcon.setAttribute("aria-label", "Delete card");
   floating.appendChild(deleteIcon);
 
   cardEl.appendChild(floating);
