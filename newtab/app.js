@@ -5,7 +5,7 @@ import { SEARCH_DEBOUNCE_MS, VIEW_MODES, DEFAULT_BOARD_NAME } from "./constants.
 import { renderSpaceTabs, renderBoard, renderFavoritesBoard, resolveCardFavicon } from "./render.js";
 import { showSnackbar, hideSnackbar, openConfirm, openCardModal, closeModal, openSpaceModal, initModals } from "./modals.js";
 import { fetchOpenTabs, initTabs, renderOpenTabs, registerTabObservers } from "./tabs.js";
-import { getHorizontalAfterElement, attachDropTargets, enableColumnDrag, moveCardToSpace, moveBoard, moveSpace, clearSpaceTabDropState, clearSpaceDragging, clearColumnDropTargets, getDraggingCard, getDraggingBoardId, getDraggingSpaceId, isSuppressCardClick, setSuppressCardClick, setDraggingCard, setDraggingBoardId, setDraggingSpaceId } from "./drag.js";
+import { getHorizontalAfterElement, attachDropTargets, enableColumnDrag, moveCardToSpace, moveBoard, moveSpace, clearSpaceTabDropState, clearSpaceDragging, clearColumnDropTargets, getDraggingCard, getDraggingBoardId, getDraggingSpaceId, isSuppressCardClick, setSuppressCardClick, setDraggingCard, setDraggingBoardId, setDraggingSpaceId, warmDragCache, clearDragCache } from "./drag.js";
 import { schedulePersist, scheduleDriveSync, handleDriveUpdate, initDriveUI } from "./drive-ui.js";
 const boardEl = document.getElementById("board");
 const spaceTabsEl = document.getElementById("space-tabs");
@@ -41,10 +41,15 @@ const handleCardDragStart = ({ cardId, boardId, spaceId, cardTitle, cardEl, even
   cardEl.classList.add("dragging");
   event.dataTransfer.effectAllowed = "move";
   event.dataTransfer.setData("text/plain", cardTitle);
+  document.body.classList.add("drag-in-progress");
+  const container = cardEl.closest(".card-list");
+  if (container) warmDragCache(container);
 };
 const handleCardDragEnd = ({ cardEl }) => {
   setDraggingCard(null);
   cardEl.classList.remove("dragging");
+  document.body.classList.remove("drag-in-progress");
+  clearDragCache();
 };
 const handleStateChange = (state) => {
   const meta = state.meta ? { ...state.meta } : null;
@@ -233,7 +238,19 @@ boardEl.addEventListener("click", async (event) => {
 });
 boardEl.addEventListener("focusout", (event) => { if (!event.target.classList?.contains("column-title")) return; const boardId = event.target.dataset.boardId; const newName = event.target.textContent.trim() || DEFAULT_BOARD_NAME; event.target.textContent = newName; updateState((draft) => { const board = findBoard(getActiveSpace(draft), boardId); if (board) board.name = newName; }); });
 boardEl.addEventListener("keydown", (event) => { if (!event.target.classList?.contains("column-title") || event.key !== "Enter") return; event.preventDefault(); event.target.blur(); });
-boardEl.addEventListener("dragover", (event) => { if (!getDraggingBoardId()) return; event.preventDefault(); const afterElement = getHorizontalAfterElement(boardEl, ".column:not(.dragging)", event.clientX); clearColumnDropTargets(boardEl); if (afterElement) afterElement.classList.add("column-drop-target"); });
+let boardDragRafPending = false;
+boardEl.addEventListener("dragover", (event) => {
+  if (!getDraggingBoardId()) return;
+  event.preventDefault();
+  if (boardDragRafPending) return;
+  boardDragRafPending = true;
+  requestAnimationFrame(() => {
+    boardDragRafPending = false;
+    const afterElement = getHorizontalAfterElement(boardEl, ".column:not(.dragging)", event.clientX);
+    clearColumnDropTargets(boardEl);
+    if (afterElement) afterElement.classList.add("column-drop-target");
+  });
+});
 boardEl.addEventListener("drop", (event) => { if (!getDraggingBoardId()) return; event.preventDefault(); const afterElement = getHorizontalAfterElement(boardEl, ".column:not(.dragging)", event.clientX); const columns = [...boardEl.querySelectorAll(".column:not(.dragging)")]; moveBoard(getDraggingBoardId(), afterElement ? columns.findIndex((column) => column.dataset.boardId === afterElement.dataset.boardId) : columns.length); clearColumnDropTargets(boardEl); boardEl.querySelector(".column.dragging")?.classList.remove("dragging"); setDraggingBoardId(null); });
 boardEl.addEventListener("contextmenu", (event) => { const card = event.target.closest(".card"); if (!card) return; event.preventDefault(); openCardModal({ boardId: card.dataset.boardId, cardId: card.dataset.cardId, spaceId: card.dataset.spaceId || null }); });
 addColumnBtn?.addEventListener("click", () => { if (currentState?.preferences.viewMode === VIEW_MODES.FAVORITES) return showSnackbar("You can't add boards while in Favorites view."); updateState((draft) => { const active = getActiveSpace(draft); if (active) active.boards.push({ id: generateId("board"), name: "New board", cards: [] }); }); showSnackbar("Board added."); });

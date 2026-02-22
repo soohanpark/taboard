@@ -6,6 +6,11 @@ let draggingBoardId = null;
 let draggingSpaceId = null;
 let suppressCardClick = false;
 
+let cachedCards = null;
+let cachedRects = null;
+let cachedHorizontalItems = null;
+let cachedHorizontalRects = null;
+
 const getActiveSpace = (state = getState()) => {
   if (!state?.spaces?.length) return null;
   const active = state.spaces.find(
@@ -42,10 +47,11 @@ export const setDraggingSpaceId = (value) => {
 };
 
 export const getDragAfterElement = (container, y) => {
-  const cards = [...container.querySelectorAll(".card:not(.dragging)")];
+  const cards = cachedCards ?? [...container.querySelectorAll(".card:not(.dragging)")];
+  const rects = cachedRects ?? cards.map((el) => el.getBoundingClientRect());
   return cards.reduce(
-    (closest, child) => {
-      const box = child.getBoundingClientRect();
+    (closest, child, i) => {
+      const box = rects[i];
       const offset = y - (box.top + box.height / 2);
       if (offset < 0 && offset > closest.offset) {
         return { offset, element: child };
@@ -57,10 +63,11 @@ export const getDragAfterElement = (container, y) => {
 };
 
 export const getHorizontalAfterElement = (container, selector, x) => {
-  const items = [...container.querySelectorAll(selector)];
+  const items = cachedHorizontalItems ?? [...container.querySelectorAll(selector)];
+  const rects = cachedHorizontalRects ?? items.map((el) => el.getBoundingClientRect());
   return items.reduce(
-    (closest, child) => {
-      const box = child.getBoundingClientRect();
+    (closest, child, i) => {
+      const box = rects[i];
       const offset = x - (box.left + box.width / 2);
       if (offset < 0 && offset > closest.offset) {
         return { offset, element: child };
@@ -69,6 +76,18 @@ export const getHorizontalAfterElement = (container, selector, x) => {
     },
     { offset: Number.NEGATIVE_INFINITY, element: null },
   ).element;
+};
+
+export const warmDragCache = (container) => {
+  cachedCards = [...container.querySelectorAll(".card:not(.dragging)")];
+  cachedRects = cachedCards.map((el) => el.getBoundingClientRect());
+};
+
+export const clearDragCache = () => {
+  cachedCards = null;
+  cachedRects = null;
+  cachedHorizontalItems = null;
+  cachedHorizontalRects = null;
 };
 
 export const moveCard = (
@@ -178,6 +197,7 @@ export const moveSpace = (spaceId, targetIndex) => {
 export const attachDropTargets = (cardListEl, options = {}) => {
   const { addTabCardToBoard = null } = options;
 
+  let rafPending = false;
   cardListEl.addEventListener("dragover", (event) => {
     const isTabDrag = Array.from(event.dataTransfer?.types ?? []).includes(
       TAB_DRAG_MIME,
@@ -185,8 +205,13 @@ export const attachDropTargets = (cardListEl, options = {}) => {
     const isCardDrag = Boolean(getDraggingCard());
     if (!isTabDrag && !isCardDrag) return;
     event.preventDefault();
-    cardListEl.classList.add("drag-over");
     event.dataTransfer.dropEffect = getDraggingCard() ? "move" : "copy";
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => {
+      rafPending = false;
+      cardListEl.classList.add("drag-over");
+    });
   });
 
   cardListEl.addEventListener("dragleave", () => {

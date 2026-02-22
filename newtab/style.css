@@ -1332,6 +1332,12 @@ body {
   opacity: 1;
 }
 
+/* Drag optimization */
+.drag-in-progress .card,
+.drag-in-progress .column {
+  will-change: transform;
+}
+
 button:active {
   transform: scale(0.98);
 }
