@@ -31,6 +31,12 @@ import {
   DEFAULT_BOARD_NAME,
   SNACKBAR_DURATION_MS,
 } from "./constants.js";
+import {
+  renderSpaceTabs,
+  renderBoard,
+  renderFavoritesBoard,
+  resolveCardFavicon,
+} from "./render.js";
 
 const boardEl = document.getElementById("board");
 const spaceTabsEl = document.getElementById("space-tabs");
@@ -74,56 +80,6 @@ const cleanupTabListeners = [];
 let suppressCardClick = false;
 let driveSyncIntervalId = null;
 let confirmResolver = null;
-
-const isSafeIconUrl = (icon) => {
-  if (!icon || typeof icon !== "string") return false;
-  const value = icon.trim();
-  if (!value) return false;
-  return (
-    /^(https?:|data:image)/i.test(value) ||
-    value.startsWith("chrome-extension://") ||
-    value.startsWith("chrome://") ||
-    value.startsWith("/") ||
-    value.startsWith("./") ||
-    value.startsWith("../") ||
-    value.startsWith("icons/")
-  );
-};
-
-const deriveFaviconFromUrl = (url) => {
-  if (!url || typeof url !== "string") return "";
-  try {
-    const parsed = new URL(url.trim());
-    if (!/^https?:/i.test(parsed.protocol)) {
-      return "";
-    }
-    return `${parsed.origin}/favicon.ico`;
-  } catch (error) {
-    return "";
-  }
-};
-
-const resolveCardFavicon = (payload, existingCard = null) => {
-  if (payload.type !== "link") return "";
-  const provided = isSafeIconUrl(payload.favicon) ? payload.favicon.trim() : "";
-  if (provided) return provided;
-  if (
-    existingCard?.favicon &&
-    isSafeIconUrl(existingCard.favicon) &&
-    existingCard.url === payload.url
-  ) {
-    return existingCard.favicon;
-  }
-  return deriveFaviconFromUrl(payload.url);
-};
-
-const getCardFavicon = (card) => {
-  const source =
-    (card?.favicon && isSafeIconUrl(card.favicon) && card.favicon.trim()) ||
-    deriveFaviconFromUrl(card?.url) ||
-    "";
-  return source || FALLBACK_FAVICON;
-};
 
 const getActiveSpace = (state = currentState) => {
   if (!state?.spaces?.length) return null;
@@ -400,8 +356,6 @@ const stopDriveBackgroundSync = () => {
   driveSyncInFlight = false;
 };
 
-const formatCount = (count) => `${count} ${count === 1 ? "site" : "sites"}`;
-
 const updateCardFormFields = (type) => {
   const isLink = type === "link";
   if (cardNoteField) {
@@ -413,211 +367,6 @@ const updateCardFormFields = (type) => {
   if (cardUrlInput) {
     cardUrlInput.required = isLink;
   }
-};
-
-const cardMatchesSearch = (card, searchTerm) => {
-  if (!searchTerm) return true;
-  const haystack = [card.title, card.note, card.url, card.tags?.join(" ") ?? ""]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  return haystack.includes(searchTerm.toLowerCase());
-};
-
-const renderSpaceTabs = (state) => {
-  spaceTabsEl.innerHTML = "";
-
-  const favoritesTab = document.createElement("button");
-  favoritesTab.type = "button";
-  favoritesTab.className = `space-tab space-tab-favorites${
-    state.preferences.viewMode === VIEW_MODES.FAVORITES ? " active" : ""
-  }`;
-  favoritesTab.dataset.viewMode = VIEW_MODES.FAVORITES;
-  favoritesTab.textContent = "★";
-  spaceTabsEl.appendChild(favoritesTab);
-
-  state.spaces.forEach((space) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    const isActiveSpace =
-      state.preferences.viewMode === VIEW_MODES.SPACES &&
-      space.id === state.preferences.activeSpaceId;
-    button.className = `space-tab${isActiveSpace ? " active" : ""}`;
-    button.dataset.spaceId = space.id;
-    button.draggable = true;
-    const dot = document.createElement("span");
-    dot.className = "favorites-space-dot space-dot";
-    dot.style.backgroundColor = space.accent ?? "var(--accent)";
-    const name = document.createElement("span");
-    name.textContent = space.name;
-    button.appendChild(dot);
-    button.appendChild(name);
-    spaceTabsEl.appendChild(button);
-  });
-
-  const addBtn = document.createElement("button");
-  addBtn.type = "button";
-  addBtn.className = "space-tab";
-  addBtn.id = "add-space-tab";
-  addBtn.textContent = "＋";
-  spaceTabsEl.appendChild(addBtn);
-};
-
-const createCardElement = (card, boardId, searchTerm, options = {}) => {
-  const {
-    spaceId = null,
-    readOnly = false,
-    originLabel = "",
-    animateCards = true,
-    originAccent = null,
-  } = options;
-  const cardEl = document.createElement("article");
-  cardEl.className = "card";
-  cardEl.dataset.cardId = card.id;
-  cardEl.dataset.boardId = boardId;
-  cardEl.dataset.spaceId = spaceId ?? "";
-  cardEl.dataset.type = card.type;
-  cardEl.draggable = !readOnly;
-  if (readOnly) {
-    cardEl.classList.add("card-readonly");
-  }
-  if (card.done) {
-    cardEl.classList.add("is-done");
-  }
-  if (originAccent) {
-    cardEl.style.setProperty("--origin-accent", originAccent);
-  }
-
-  if (card.type === "link" && card.url) {
-    cardEl.classList.add("card-link");
-  }
-  if (animateCards === false) {
-    cardEl.classList.add("card-no-animate");
-  }
-
-  const floating = document.createElement("div");
-  floating.className = "card-floating-actions";
-
-  if (card.type === "todo") {
-    const doneButton = document.createElement("button");
-    doneButton.type = "button";
-    doneButton.className = "card-floating-button card-done-button";
-    doneButton.dataset.cardAction = "toggle-done";
-    doneButton.title = card.done ? "Mark incomplete" : "Mark complete";
-    doneButton.textContent = card.done ? "✔" : "☐";
-    if (card.done) {
-      doneButton.classList.add("is-done");
-    }
-    floating.appendChild(doneButton);
-  }
-
-  const editIcon = document.createElement("button");
-  editIcon.type = "button";
-  editIcon.className = "card-floating-button";
-  editIcon.dataset.cardAction = "edit";
-  editIcon.title = "Edit";
-  editIcon.textContent = "✎";
-  floating.appendChild(editIcon);
-
-  const favoriteIcon = document.createElement("button");
-  favoriteIcon.type = "button";
-  favoriteIcon.className = "card-floating-button card-favorite-button";
-  favoriteIcon.dataset.cardAction = "favorite";
-  favoriteIcon.title = card.favorite ? "Unfavorite" : "Favorite";
-  favoriteIcon.textContent = card.favorite ? "★" : "☆";
-  if (card.favorite) {
-    favoriteIcon.classList.add("is-active");
-  }
-  floating.appendChild(favoriteIcon);
-
-  const deleteIcon = document.createElement("button");
-  deleteIcon.type = "button";
-  deleteIcon.className = "card-floating-button";
-  deleteIcon.dataset.cardAction = "delete";
-  deleteIcon.title = "Delete";
-  deleteIcon.textContent = "×";
-  floating.appendChild(deleteIcon);
-
-  cardEl.appendChild(floating);
-
-  if (originLabel) {
-    const origin = document.createElement("span");
-    origin.className = "card-origin";
-    origin.textContent = originLabel;
-    cardEl.appendChild(origin);
-  }
-
-  const titleRow = document.createElement("div");
-  titleRow.className = "card-title-row";
-
-  if (card.type === "link") {
-    const favicon = document.createElement("img");
-    favicon.className = "card-favicon";
-    favicon.alt = "";
-    favicon.src = getCardFavicon(card);
-    favicon.addEventListener("error", () => {
-      if (favicon.dataset.fallbackApplied === "true") return;
-      favicon.dataset.fallbackApplied = "true";
-      favicon.src = FALLBACK_FAVICON;
-    });
-    titleRow.appendChild(favicon);
-  }
-
-  const title = document.createElement("p");
-  title.className = "card-title";
-  title.textContent = card.title;
-  titleRow.appendChild(title);
-
-  cardEl.appendChild(titleRow);
-
-  if (card.note) {
-    const note = document.createElement("p");
-    note.className = "card-note";
-    note.textContent = card.note;
-    cardEl.appendChild(note);
-  }
-
-  if (card.url) {
-    const link = document.createElement("p");
-    link.className = "card-note card-url";
-    link.textContent = card.url;
-    cardEl.appendChild(link);
-  }
-
-  if (card.tags?.length) {
-    const tagsEl = document.createElement("div");
-    tagsEl.className = "card-tags";
-    card.tags.forEach((tag) => {
-      const tagEl = document.createElement("span");
-      tagEl.className = "card-tag";
-      tagEl.textContent = `#${tag}`;
-      tagsEl.appendChild(tagEl);
-    });
-    cardEl.appendChild(tagsEl);
-  }
-
-  const matches = cardMatchesSearch(card, searchTerm);
-  if (searchTerm && !matches) {
-    cardEl.classList.add("card-hidden");
-  } else {
-    cardEl.classList.remove("card-hidden");
-  }
-
-  if (!readOnly) {
-    cardEl.addEventListener("dragstart", (event) => {
-      draggingCard = { cardId: card.id, boardId, spaceId };
-      cardEl.classList.add("dragging");
-      event.dataTransfer.effectAllowed = "move";
-      event.dataTransfer.setData("text/plain", card.title ?? "card");
-    });
-
-    cardEl.addEventListener("dragend", () => {
-      draggingCard = null;
-      cardEl.classList.remove("dragging");
-    });
-  }
-
-  return cardEl;
 };
 
 const getDragAfterElement = (container, y) => {
@@ -828,6 +577,25 @@ const clearColumnDropTargets = () => {
   targets.forEach((column) => column.classList.remove("column-drop-target"));
 };
 
+const handleCardDragStart = ({
+  cardId,
+  boardId,
+  spaceId,
+  cardTitle,
+  cardEl,
+  event,
+}) => {
+  draggingCard = { cardId, boardId, spaceId };
+  cardEl.classList.add("dragging");
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", cardTitle);
+};
+
+const handleCardDragEnd = ({ cardEl }) => {
+  draggingCard = null;
+  cardEl.classList.remove("dragging");
+};
+
 const enableColumnDrag = (column) => {
   const header = column.querySelector(".column-header");
   if (!header) return;
@@ -852,235 +620,6 @@ const enableColumnDrag = (column) => {
     column.classList.remove("dragging");
     clearColumnDropTargets();
   });
-};
-
-const appendAddBoardButton = () => {
-  if (!addColumnBtn) return;
-  addColumnBtn.classList.add("add-column-tile");
-  addColumnBtn.textContent = "+";
-  addColumnBtn.setAttribute("aria-label", "Add board");
-  addColumnBtn.style.display = "inline-flex";
-  boardEl.appendChild(addColumnBtn);
-};
-
-const renderBoard = (state, options = {}) => {
-  boardEl.classList.remove("favorites-view");
-  boardEl.classList.remove("board-empty");
-  boardEl.innerHTML = "";
-  const space = getActiveSpace(state);
-  if (!space) {
-    const placeholder = document.createElement("p");
-    placeholder.textContent = "Create a space first.";
-    boardEl.appendChild(placeholder);
-    return;
-  }
-
-  const searchTerm = state.preferences.searchTerm?.trim();
-
-  if (!space.boards.length) {
-    boardEl.classList.add("board-empty");
-    appendAddBoardButton();
-    return;
-  }
-
-  space.boards.forEach((board) => {
-    const column = document.createElement("article");
-    column.className = "column";
-    column.dataset.spaceId = space.id;
-    if (options.animateColumns === false) {
-      column.classList.add("column-no-animate");
-    }
-    column.dataset.boardId = board.id;
-
-    const header = document.createElement("div");
-    header.className = "column-header";
-
-    const title = document.createElement("div");
-    title.className = "column-title";
-    title.contentEditable = true;
-    title.dataset.boardId = board.id;
-    title.textContent = board.name;
-
-    const metaGroup = document.createElement("div");
-    metaGroup.className = "column-meta";
-
-    const metaButton = document.createElement("button");
-    metaButton.type = "button";
-    metaButton.className = "column-sites";
-    metaButton.dataset.boardOpen = board.id;
-    metaButton.textContent = formatCount(board.cards.length);
-    metaGroup.appendChild(metaButton);
-
-    const deleteBtn = document.createElement("button");
-    deleteBtn.type = "button";
-    deleteBtn.className = "column-delete";
-    deleteBtn.dataset.columnDelete = board.id;
-    deleteBtn.title = "Delete board";
-    deleteBtn.textContent = "×";
-    const headerControls = document.createElement("div");
-    headerControls.className = "column-controls";
-    headerControls.appendChild(metaGroup);
-    headerControls.appendChild(deleteBtn);
-
-    header.appendChild(title);
-    header.appendChild(headerControls);
-    column.appendChild(header);
-
-    const cardList = document.createElement("div");
-    cardList.className = "card-list";
-    cardList.dataset.boardId = board.id;
-    cardList.dataset.spaceId = space.id;
-    attachDropTargets(cardList);
-
-    board.cards.forEach((card) => {
-      const cardEl = createCardElement(card, board.id, searchTerm, {
-        animateCards: options.animateCards,
-        spaceId: space.id,
-      });
-      cardList.appendChild(cardEl);
-    });
-
-    const dropIndicator = document.createElement("div");
-    dropIndicator.className = "board-drop-indicator";
-    cardList.appendChild(dropIndicator);
-
-    column.appendChild(cardList);
-
-    const addCardBtn = document.createElement("button");
-    addCardBtn.type = "button";
-    addCardBtn.className = "add-card";
-    addCardBtn.dataset.boardId = board.id;
-    addCardBtn.textContent = "+";
-    addCardBtn.setAttribute("aria-label", "Add card");
-    column.appendChild(addCardBtn);
-    enableColumnDrag(column);
-    boardEl.appendChild(column);
-  });
-
-  appendAddBoardButton();
-};
-
-const getFavoriteGroups = (state, searchTerm) =>
-  state.spaces
-    .map((space) => {
-      const cards = [];
-      space.boards.forEach((board) => {
-        board.cards.forEach((card) => {
-          if (card.favorite && cardMatchesSearch(card, searchTerm)) {
-            cards.push({
-              card,
-              boardId: board.id,
-              boardName: board.name,
-            });
-          }
-        });
-      });
-      return { space, cards };
-    })
-    .filter((group) => group.cards.length);
-
-const renderFavoritesBoard = (state) => {
-  boardEl.classList.add("favorites-view");
-  boardEl.innerHTML = "";
-  const searchTerm = state.preferences.searchTerm?.trim();
-  const favoriteGroups = getFavoriteGroups(state, searchTerm);
-  const isFiltering = Boolean(searchTerm);
-
-  if (!favoriteGroups.length) {
-    const empty = document.createElement("div");
-    empty.className = "favorites-empty";
-    const emptyIcon = document.createElement("div");
-    emptyIcon.className = "favorites-empty-icon";
-    emptyIcon.textContent = "☆";
-    const emptyTitle = document.createElement("p");
-    emptyTitle.textContent = isFiltering
-      ? "No favorited cards match your search."
-      : "No favorited cards yet.";
-    const emptyHint = document.createElement("p");
-    emptyHint.className = "favorites-empty-hint";
-    emptyHint.textContent = isFiltering
-      ? "Try a different search term or add some favorites."
-      : "Use the star on a card to add it to favorites.";
-    empty.appendChild(emptyIcon);
-    empty.appendChild(emptyTitle);
-    empty.appendChild(emptyHint);
-    boardEl.appendChild(empty);
-    return;
-  }
-
-  const hero = document.createElement("div");
-  hero.className = "favorites-hero";
-  const heroIcon = document.createElement("div");
-  heroIcon.className = "favorites-hero-icon";
-  heroIcon.textContent = "★";
-  const heroText = document.createElement("div");
-  heroText.className = "favorites-hero-text";
-  const heroTitle = document.createElement("p");
-  heroTitle.className = "favorites-hero-title";
-  heroTitle.textContent = "Favorites hub";
-  const heroSubtitle = document.createElement("p");
-  heroSubtitle.className = "favorites-hero-subtitle";
-  heroSubtitle.textContent = "See your most important cards in one place.";
-  heroText.appendChild(heroTitle);
-  heroText.appendChild(heroSubtitle);
-  hero.appendChild(heroIcon);
-  hero.appendChild(heroText);
-  boardEl.appendChild(hero);
-
-  const groupsWrap = document.createElement("div");
-  groupsWrap.className = "favorites-groups";
-
-  favoriteGroups.forEach((group) => {
-    const groupEl = document.createElement("article");
-    groupEl.className = "favorites-group";
-    groupEl.style.setProperty(
-      "--group-accent",
-      group.space.accent ?? "var(--accent)",
-    );
-
-    const header = document.createElement("div");
-    header.className = "favorites-group-header";
-
-    const title = document.createElement("div");
-    title.className = "favorites-group-title";
-
-    const dot = document.createElement("span");
-    dot.className = "favorites-space-dot";
-    dot.style.backgroundColor = group.space.accent ?? "var(--accent)";
-
-    const name = document.createElement("span");
-    name.textContent = group.space.name;
-    title.appendChild(dot);
-    title.appendChild(name);
-
-    const count = document.createElement("span");
-    count.className = "favorites-group-count";
-    count.textContent =
-      group.cards.length === 1 ? "1 card" : `${group.cards.length} cards`;
-
-    header.appendChild(title);
-    header.appendChild(count);
-    groupEl.appendChild(header);
-
-    const cards = document.createElement("div");
-    cards.className = "favorites-card-grid";
-
-    group.cards.forEach(({ card, boardId, boardName }) => {
-      const cardEl = createCardElement(card, boardId, searchTerm, {
-        spaceId: group.space.id,
-        readOnly: true,
-        originLabel: `${group.space.name} · ${boardName}`,
-        animateCards: false,
-        originAccent: group.space.accent,
-      });
-      cards.appendChild(cardEl);
-    });
-
-    groupEl.appendChild(cards);
-    groupsWrap.appendChild(groupEl);
-  });
-
-  boardEl.appendChild(groupsWrap);
 };
 
 const openCardModal = ({ boardId, cardId = null, spaceId = null }) => {
@@ -1155,15 +694,22 @@ const handleStateChange = (state) => {
   const metaAction = meta?.action ?? null;
   if (state.meta) delete state.meta;
   currentState = state;
-  renderSpaceTabs(state);
+  renderSpaceTabs(state, { spaceTabsEl });
   const isFavoritesView = state.preferences.viewMode === VIEW_MODES.FAVORITES;
   if (isFavoritesView) {
-    renderFavoritesBoard(state);
+    renderFavoritesBoard(state, { boardEl });
     if (addColumnBtn) {
       addColumnBtn.style.display = "none";
     }
   } else {
     renderBoard(state, {
+      boardEl,
+      addColumnBtn,
+      getActiveSpace,
+      attachDropTargets,
+      enableColumnDrag,
+      onCardDragStart: handleCardDragStart,
+      onCardDragEnd: handleCardDragEnd,
       animateCards: metaAction !== "move-card",
       animateColumns: metaAction !== "move-card" && metaAction !== "move-board",
     });
@@ -1294,8 +840,7 @@ const renderOpenTabs = () => {
     fragment.appendChild(item);
   });
 
-  tabListEl.innerHTML = "";
-  tabListEl.appendChild(fragment);
+  tabListEl.replaceChildren(fragment);
 };
 
 const fetchOpenTabs = async () => {

@@ -261,3 +261,30 @@ Work session started. Plan has 21 tasks + 4 final verification tasks in 6 waves.
 - ✅ Evidence files saved:
   - `.sisyphus/evidence/task-6-no-section-naming.txt`
   - `.sisyphus/evidence/task-6-board-naming.txt`
+
+## [2026-02-22] Task 7: render module extraction — COMPLETED
+
+### Changes Made
+- Created `newtab/render.js` and exported rendering-focused APIs from `app.js`:
+  - Favicon helpers: `isSafeIconUrl`, `deriveFaviconFromUrl`, `resolveCardFavicon`, `getCardFavicon`
+  - Render helpers: `formatCount`, `cardMatchesSearch`, `getFavoriteGroups`
+  - Render entrypoints: `renderSpaceTabs`, `createCardElement`, `appendAddBoardButton`, `renderBoard`, `renderFavoritesBoard`
+- Refactored `newtab/app.js` to import rendering/favicons from `./render.js` and removed inlined rendering implementations.
+- Preserved mutation wiring in `app.js` by passing callbacks into render functions:
+  - `attachDropTargets`, `enableColumnDrag`, and card drag state handlers now flow through render options.
+- Removed `innerHTML` clearing usage from rendering paths:
+  - `replaceChildren()` used in render module
+  - `tabListEl.replaceChildren(fragment)` used in tab drawer rendering
+
+### Key Learnings
+- For module splits in this codebase, callback injection is the safest way to avoid circular deps while keeping state mutation ownership inside `app.js`.
+- `render.js` can stay UI-focused and still support drag behavior by accepting read/write hooks (`onCardDragStart`, `onCardDragEnd`) instead of touching app state directly.
+- `replaceChildren()` is a drop-in for `innerHTML = ""` and keeps DOM updates explicit across render surfaces.
+
+### Verification
+- ✅ `node --check newtab/render.js && node --check newtab/app.js`
+- ✅ `grep -rn "innerHTML" newtab/*.js` returns no matches
+- ✅ LSP diagnostics clean for changed files (`newtab/render.js`, `newtab/app.js`)
+- ✅ Evidence files saved:
+  - `.sisyphus/evidence/task-7-render-exports.txt`
+  - `.sisyphus/evidence/task-7-no-innerhtml.txt`
