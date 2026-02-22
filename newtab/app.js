@@ -18,6 +18,20 @@ import {
   pushToDrive,
   subscribeDrive,
 } from "./drive.js";
+import {
+  PERSIST_DEBOUNCE_MS,
+  DRIVE_SYNC_DEBOUNCE_MS,
+  SEARCH_DEBOUNCE_MS,
+  TAB_UPDATE_DEBOUNCE_MS,
+  DRIVE_SYNC_INTERVAL,
+  NEWTAB_DRIVE_CHECK_INTERVAL,
+  TAB_DRAG_MIME,
+  VIEW_MODES,
+  FALLBACK_FAVICON,
+  DEFAULT_BOARD_NAME,
+  DEFAULT_SPACE_NAME,
+  SNACKBAR_DURATION_MS,
+} from "./constants.js";
 
 const boardEl = document.getElementById("board");
 const spaceTabsEl = document.getElementById("space-tabs");
@@ -58,19 +72,8 @@ let draggingSpaceId = null;
 let openTabs = [];
 let tabFilter = "";
 const cleanupTabListeners = [];
-const TAB_DRAG_MIME = "application/taboard-tab";
 let suppressCardClick = false;
-const DRIVE_SYNC_INTERVAL = 30 * 60 * 1000;
-const NEWTAB_DRIVE_CHECK_INTERVAL = 60 * 60 * 1000;
-const VIEW_MODES = { SPACES: "spaces", FAVORITES: "favorites" };
 let driveSyncIntervalId = null;
-let hasPulledDriveState = false;
-let driveSyncInFlight = false;
-let suppressNextDriveSync = false;
-const FALLBACK_FAVICON =
-  (typeof chrome !== "undefined" &&
-    chrome.runtime?.getURL?.("icons/icon48.png")) ||
-  "icons/icon48.png";
 let confirmResolver = null;
 
 const isSafeIconUrl = (icon) => {
@@ -191,7 +194,7 @@ const hideSnackbar = () => {
   snackbarEl.textContent = "";
 };
 
-const showSnackbar = (message, duration = 3000) => {
+const showSnackbar = (message, duration = SNACKBAR_DURATION_MS) => {
   if (!message) {
     hideSnackbar();
     return;
@@ -223,7 +226,7 @@ const closeConfirm = () => {
 
 const schedulePersist = (state) => {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => saveStateToStorage(state), 350);
+  saveTimer = setTimeout(() => saveStateToStorage(state), PERSIST_DEBOUNCE_MS);
 };
 
 const scheduleDriveSync = (
@@ -253,7 +256,7 @@ const scheduleDriveSync = (
   if (immediate || trigger === "add-card") {
     executor();
   } else {
-    driveTimer = setTimeout(executor, 1500);
+    driveTimer = setTimeout(executor, DRIVE_SYNC_DEBOUNCE_MS);
   }
 };
 
@@ -1311,7 +1314,7 @@ const registerTabObservers = () => {
   let tabUpdateTimer = null;
   const debouncedUpdate = () => {
     clearTimeout(tabUpdateTimer);
-    tabUpdateTimer = setTimeout(fetchOpenTabs, 100);
+    tabUpdateTimer = setTimeout(fetchOpenTabs, TAB_UPDATE_DEBOUNCE_MS);
   };
   const events = [
     chrome.tabs.onCreated,
@@ -1513,7 +1516,7 @@ boardEl.addEventListener("click", async (event) => {
 boardEl.addEventListener("focusout", (event) => {
   if (event.target.classList?.contains("column-title")) {
     const sectionId = event.target.dataset.sectionId;
-    const newName = event.target.textContent.trim() || "Untitled board";
+    const newName = event.target.textContent.trim() || DEFAULT_BOARD_NAME;
     event.target.textContent = newName;
     updateState((draft) => {
       const active = getActiveSpace(draft);
@@ -2106,7 +2109,7 @@ searchInput.addEventListener("input", (event) => {
     updateState((draft) => {
       draft.preferences.searchTerm = value;
     });
-  }, 150);
+  }, SEARCH_DEBOUNCE_MS);
 });
 
 tabListEl.addEventListener("dragstart", (event) => {
