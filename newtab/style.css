@@ -565,6 +565,7 @@ body {
   grid-auto-columns: minmax(260px, 320px);
   gap: var(--space-5);
   overflow-x: auto;
+  scroll-behavior: smooth;
   height: 100%;
   padding: var(--space-6);
   border-radius: var(--radius-2xl);
@@ -837,6 +838,8 @@ body {
   gap: var(--space-3);
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+  scroll-behavior: smooth;
 }
 
 .card {
@@ -1375,6 +1378,35 @@ button:active {
 }
 
 /* ========================================
+   Scrollbar Styling
+   ======================================== */
+.card-list::-webkit-scrollbar,
+.board::-webkit-scrollbar,
+.drawer-list::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.card-list::-webkit-scrollbar-track,
+.board::-webkit-scrollbar-track,
+.drawer-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.card-list::-webkit-scrollbar-thumb,
+.board::-webkit-scrollbar-thumb,
+.drawer-list::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: var(--radius-full);
+}
+
+.card-list::-webkit-scrollbar-thumb:hover,
+.board::-webkit-scrollbar-thumb:hover,
+.drawer-list::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+/* ========================================
    Accessibility — Focus Visible
    ======================================== */
 .space-tab:focus-visible,
@@ -1787,5 +1819,18 @@ button:active {
     background: var(--bg-tertiary);
     border-color: var(--border-medium);
     color: var(--text-primary);
+  }
+
+  /* Scrollbar styling - dark mode */
+  .card-list::-webkit-scrollbar-thumb,
+  .board::-webkit-scrollbar-thumb,
+  .drawer-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+  }
+
+  .card-list::-webkit-scrollbar-thumb:hover,
+  .board::-webkit-scrollbar-thumb:hover,
+  .drawer-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
   }
 }
