@@ -93,7 +93,11 @@ export const scheduleDriveSync = (
   }
 };
 
-const mergeAddedCardsIntoRemote = (remoteState, localState, addedCards = []) => {
+const mergeAddedCardsIntoRemote = (
+  remoteState,
+  localState,
+  addedCards = [],
+) => {
   if (!remoteState || !localState || !Array.isArray(addedCards)) {
     return remoteState;
   }

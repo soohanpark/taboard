@@ -324,7 +324,9 @@ const withToken = async (interactive = false) => {
 const stripFavicons = (state) => {
   if (!state) return state;
   return JSON.parse(
-    JSON.stringify(state, (key, value) => (key === "favicon" ? undefined : value))
+    JSON.stringify(state, (key, value) =>
+      key === "favicon" ? undefined : value,
+    ),
   );
 };
 

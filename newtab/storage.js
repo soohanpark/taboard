@@ -20,7 +20,7 @@ const withStorage = async (method, payload) => {
     });
   } catch (err) {
     // Retry once after 100ms on failure
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 100));
     return await new Promise((resolve, reject) => {
       if (!chrome?.storage?.local?.[method]) {
         reject(new Error("chrome.storage.local is unavailable."));

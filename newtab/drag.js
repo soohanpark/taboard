@@ -47,7 +47,9 @@ export const setDraggingSpaceId = (value) => {
 };
 
 export const getDragAfterElement = (container, y) => {
-  const cards = cachedCards ?? [...container.querySelectorAll(".card:not(.dragging)")];
+  const cards = cachedCards ?? [
+    ...container.querySelectorAll(".card:not(.dragging)"),
+  ];
   const rects = cachedRects ?? cards.map((el) => el.getBoundingClientRect());
   return cards.reduce(
     (closest, child, i) => {
@@ -63,8 +65,11 @@ export const getDragAfterElement = (container, y) => {
 };
 
 export const getHorizontalAfterElement = (container, selector, x) => {
-  const items = cachedHorizontalItems ?? [...container.querySelectorAll(selector)];
-  const rects = cachedHorizontalRects ?? items.map((el) => el.getBoundingClientRect());
+  const items = cachedHorizontalItems ?? [
+    ...container.querySelectorAll(selector),
+  ];
+  const rects =
+    cachedHorizontalRects ?? items.map((el) => el.getBoundingClientRect());
   return items.reduce(
     (closest, child, i) => {
       const box = rects[i];

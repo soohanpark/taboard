@@ -198,7 +198,10 @@ export const initTabs = (callbacks = {}) => {
   tabFilterInput?.addEventListener("input", (event) => {
     tabFilter = event.target.value.trim();
     clearTimeout(tabFilterDebounceTimer);
-    tabFilterDebounceTimer = setTimeout(() => renderOpenTabs(), SEARCH_DEBOUNCE_MS);
+    tabFilterDebounceTimer = setTimeout(
+      () => renderOpenTabs(),
+      SEARCH_DEBOUNCE_MS,
+    );
   });
 
   tabListEl?.addEventListener("dragstart", (event) => {
@@ -246,7 +249,7 @@ export const initTabs = (callbacks = {}) => {
     }
     const item = event.target.closest(".tab-item");
     if (!item) return;
-      event.preventDefault();
+    event.preventDefault();
     const tabId = Number(item.dataset.tabId);
     safeTabsUpdate(tabId);
   });

@@ -175,7 +175,10 @@ export const createCardElement = (card, boardId, searchTerm, options = {}) => {
     doneButton.className = "card-floating-button card-done-button";
     doneButton.dataset.cardAction = "toggle-done";
     doneButton.title = card.done ? "Mark incomplete" : "Mark complete";
-    doneButton.setAttribute("aria-label", card.done ? "Mark incomplete" : "Mark complete");
+    doneButton.setAttribute(
+      "aria-label",
+      card.done ? "Mark incomplete" : "Mark complete",
+    );
     doneButton.textContent = card.done ? "✔" : "☐";
     if (card.done) {
       doneButton.classList.add("is-done");
@@ -198,7 +201,10 @@ export const createCardElement = (card, boardId, searchTerm, options = {}) => {
   favoriteIcon.dataset.cardAction = "favorite";
   favoriteIcon.title = card.favorite ? "Unfavorite" : "Favorite";
   favoriteIcon.textContent = card.favorite ? "★" : "☆";
-  favoriteIcon.setAttribute("aria-label", card.favorite ? "Unfavorite" : "Favorite");
+  favoriteIcon.setAttribute(
+    "aria-label",
+    card.favorite ? "Unfavorite" : "Favorite",
+  );
   if (card.favorite) {
     favoriteIcon.classList.add("is-active");
   }
@@ -237,7 +243,11 @@ export const createCardElement = (card, boardId, searchTerm, options = {}) => {
     titleRow.appendChild(favicon);
   }
 
-  const typeIconMap = { link: "\uD83D\uDD17", note: "\uD83D\uDCDD", todo: "\u2713" };
+  const typeIconMap = {
+    link: "\uD83D\uDD17",
+    note: "\uD83D\uDCDD",
+    todo: "\u2713",
+  };
   const typeIcon = document.createElement("span");
   typeIcon.className = "card-type-icon";
   typeIcon.textContent = typeIconMap[card.type] ?? "";
