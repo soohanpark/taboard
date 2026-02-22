@@ -48,6 +48,10 @@ const sampleCards = () => [
   },
 ];
 
+/**
+ * Generates a 7-char base-36 ID with optional prefix.
+ * Collision probability: ~1/78 billion for 2 IDs, safe for extension usage (<10k IDs).
+ */
 export const generateId = (prefix = "item") =>
   `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 
@@ -122,9 +126,18 @@ let appState = createDefaultState();
 const listeners = new Set();
 
 const normalizeState = (state) => {
+  // Guard against null/undefined/non-object state
+  if (!state || typeof state !== "object") {
+    return createDefaultState();
+  }
   const next = clone(state);
   next.version = next.version ?? 1;
-  next.spaces = Array.isArray(next.spaces) ? next.spaces : [];
+
+  // Guard: ensure spaces is an array
+  if (!Array.isArray(next.spaces)) {
+    next.spaces = [];
+  }
+
   if (!next.preferences) {
     next.preferences = {
       activeSpaceId: next.spaces[0]?.id ?? null,
@@ -156,33 +169,43 @@ const normalizeState = (state) => {
       next.preferences.captureSectionId = activeSpace.sections[0]?.id ?? null;
     }
   }
-  next.spaces = next.spaces.map((space) => ({
-    id: space.id ?? generateId("space"),
-    name: space.name ?? "Untitled",
-    accent: space.accent ?? getRandomAccent(),
-    sections: Array.isArray(space.sections)
-      ? space.sections.map((section) => ({
-          id: section.id ?? generateId("section"),
-          name: section.name ?? "New section",
-          cards: Array.isArray(section.cards)
-            ? section.cards.map((card) => ({
-                id: card.id ?? generateId("card"),
-                type: card.type ?? "link",
-                title: card.title ?? "Untitled",
-                note: card.note ?? "",
-                url: card.url ?? "",
-                tags: Array.isArray(card.tags) ? card.tags : [],
-                color: card.color ?? "#475569",
-                favorite: Boolean(card.favorite),
-                done: Boolean(card.done),
-                favicon: typeof card.favicon === "string" ? card.favicon : "",
-                createdAt: card.createdAt ?? new Date().toISOString(),
-                updatedAt: card.updatedAt ?? new Date().toISOString(),
-              }))
-            : [],
-        }))
-      : [],
-  }));
+
+  // Guard: normalize spaces with null/type checks
+  next.spaces = next.spaces
+    .filter((space) => space && typeof space === "object")
+    .map((space) => ({
+      id: space.id ?? generateId("space"),
+      name: space.name ?? "Untitled",
+      accent: space.accent ?? getRandomAccent(),
+      sections: Array.isArray(space.sections)
+        ? space.sections
+            .filter((section) => section && typeof section === "object")
+            .map((section) => ({
+              id: section.id ?? generateId("section"),
+              name: section.name ?? "New section",
+              cards: Array.isArray(section.cards)
+                ? section.cards
+                    .filter((card) => card && typeof card === "object")
+                    .map((card) => ({
+                      id: card.id ?? generateId("card"),
+                      type: card.type ?? "link",
+                      title: card.title ?? "Untitled",
+                      note: card.note ?? "",
+                      url: card.url ?? "",
+                      tags: Array.isArray(card.tags) ? card.tags : [],
+                      color: card.color ?? "#475569",
+                      favorite: Boolean(card.favorite),
+                      done: Boolean(card.done),
+                      favicon:
+                        typeof card.favicon === "string" ? card.favicon : "",
+                      createdAt: card.createdAt ?? new Date().toISOString(),
+                      updatedAt: card.updatedAt ?? new Date().toISOString(),
+                    }))
+                : [],
+            }))
+        : [],
+    }));
+
   next.lastUpdated = next.lastUpdated ?? new Date().toISOString();
   return next;
 };
