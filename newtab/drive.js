@@ -3,6 +3,7 @@ import {
   loadDriveMetadata,
   saveDriveMetadata,
 } from "./storage.js";
+import { showSnackbar } from "./modals.js";
 
 const FILE_NAME = "TaboardSync.json";
 const DRIVE_API = "https://www.googleapis.com/drive/v3/files";
@@ -50,19 +51,74 @@ const getAuthToken = (interactive = false) =>
     });
   });
 
-const fetchJson = async (url, token) => {
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`Google API error: ${response.status}`);
+const createDriveError = (message, { status = null, cause = null } = {}) => {
+  const error = new Error(message);
+  if (status !== null) {
+    error.status = status;
   }
+  if (cause) {
+    error.cause = cause;
+  }
+  return error;
+};
+
+const fetchJson = async (url, options = {}, signal = null) => {
+  const fetchOptions = { ...options };
+  fetchOptions.headers = {
+    ...(options.headers ?? {}),
+  };
+  if (signal) {
+    fetchOptions.signal = signal;
+  }
+
+  let response;
+  try {
+    response = await fetch(url, fetchOptions);
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw error;
+    }
+    throw createDriveError("Network error while contacting Google Drive.", {
+      cause: error,
+    });
+  }
+
+  if (!response.ok) {
+    throw createDriveError(`Google API error: ${response.status}`, {
+      status: response.status,
+    });
+  }
+
   return response.json();
 };
 
-const ensureDriveFile = async (token) => {
+const isTransientError = (error) => {
+  if (!error) return false;
+  if (error.name === "AbortError") return false;
+  if (typeof error.status === "number" && error.status >= 500) return true;
+  const message = String(error.message ?? "").toLowerCase();
+  return (
+    error.name === "NetworkError" ||
+    error.name === "TypeError" ||
+    message.includes("network")
+  );
+};
+
+const withRetry = async (fn, maxRetries = 1, delayMs = 2000) => {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (attempt < maxRetries && isTransientError(error)) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        continue;
+      }
+      throw error;
+    }
+  }
+};
+
+const ensureDriveFile = async (token, signal = null) => {
   if (driveState.fileId) {
     return driveState.fileId;
   }
@@ -70,7 +126,12 @@ const ensureDriveFile = async (token) => {
   const query = encodeURIComponent(`name='${FILE_NAME}' and trashed=false`);
   const result = await fetchJson(
     `${DRIVE_API}?q=${query}&fields=files(id,name)`,
-    token,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    signal,
   );
   if (result?.files?.length) {
     driveState.fileId = result.files[0].id;
@@ -94,59 +155,73 @@ const ensureDriveFile = async (token) => {
     },
   )}\r\n--${boundary}--`;
 
-  const response = await fetch(`${DRIVE_UPLOAD_API}?uploadType=multipart`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": `multipart/related; boundary=${boundary}`,
+  const created = await fetchJson(
+    `${DRIVE_UPLOAD_API}?uploadType=multipart`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": `multipart/related; boundary=${boundary}`,
+      },
+      body,
     },
-    body,
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to create Drive file.");
-  }
-
-  const created = await response.json();
+    signal,
+  );
   driveState.fileId = created.id;
   await persistMeta();
   return created.id;
 };
 
-const uploadData = async (token, fileId, data) => {
-  const response = await fetch(
-    `${DRIVE_UPLOAD_API}/${fileId}?uploadType=media`,
-    {
+const uploadData = async (token, fileId, data, signal = null) => {
+  let response;
+  try {
+    response = await fetch(`${DRIVE_UPLOAD_API}/${fileId}?uploadType=media`, {
       method: "PATCH",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(data),
+      signal,
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw error;
+    }
+    throw createDriveError("Network error while uploading Drive data.", {
+      cause: error,
+    });
+  }
+
+  if (!response.ok) {
+    throw createDriveError(`Failed to upload data (${response.status}).`, {
+      status: response.status,
+    });
+  }
+};
+
+const downloadData = async (token, fileId, signal = null) => {
+  return fetchJson(
+    `${DRIVE_API}/${fileId}?alt=media`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
     },
+    signal,
   );
-
-  if (!response.ok) {
-    throw new Error(`Failed to upload data (${response.status}).`);
-  }
 };
 
-const downloadData = async (token, fileId) => {
-  const response = await fetch(`${DRIVE_API}/${fileId}?alt=media`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
+const fetchUserProfile = async (token, signal = null) => {
+  const profile = await fetchJson(
+    `${USER_INFO_ENDPOINT}?alt=json`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
     },
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to download data.");
-  }
-
-  return response.json();
-};
-
-const fetchUserProfile = async (token) => {
-  const profile = await fetchJson(`${USER_INFO_ENDPOINT}?alt=json`, token);
+    signal,
+  );
   return {
     email: profile.email,
     picture: profile.picture,
@@ -195,6 +270,7 @@ export const connectDrive = async () => {
   } catch (error) {
     driveState.lastError = error.message;
     emit();
+    showSnackbar("Failed to connect to Drive: " + error.message);
     throw error;
   }
 };
@@ -252,18 +328,22 @@ const stripFavicons = (state) => {
   );
 };
 
-export const pushToDrive = async (state) => {
+export const pushToDrive = async (state, options = {}) => {
   if (driveState.status !== "connected") {
     return;
   }
+
+  const { signal = null } = options;
 
   driveState.syncing = true;
   emit();
 
   try {
-    const token = await withToken(false);
-    const fileId = await ensureDriveFile(token);
-    await uploadData(token, fileId, stripFavicons(state));
+    await withRetry(async () => {
+      const token = await withToken(false);
+      const fileId = await ensureDriveFile(token, signal);
+      await uploadData(token, fileId, stripFavicons(state), signal);
+    });
     driveState.lastSyncedAt = new Date().toISOString();
     driveState.syncing = false;
     driveState.lastError = null;
@@ -273,6 +353,7 @@ export const pushToDrive = async (state) => {
     driveState.syncing = false;
     driveState.lastError = error.message;
     emit();
+    showSnackbar("Drive sync failed: " + error.message);
     throw error;
   }
 };
@@ -286,9 +367,12 @@ export const pullFromDrive = async (options = {}) => {
   emit();
 
   try {
-    const token = await withToken(false);
-    const fileId = await ensureDriveFile(token);
-    const data = await downloadData(token, fileId);
+    const { signal = null } = options;
+    const data = await withRetry(async () => {
+      const token = await withToken(false);
+      const fileId = await ensureDriveFile(token, signal);
+      return downloadData(token, fileId, signal);
+    });
     if (options.markChecked) {
       driveState.lastCheckedAt = new Date().toISOString();
       await persistMeta();
@@ -301,6 +385,7 @@ export const pullFromDrive = async (options = {}) => {
     driveState.syncing = false;
     driveState.lastError = error.message;
     emit();
+    showSnackbar("Failed to load Drive data: " + error.message);
     throw error;
   }
 };

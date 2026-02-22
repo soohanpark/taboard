@@ -23,13 +23,33 @@ const driveMenuDisconnectBtn = document.getElementById("drive-menu-disconnect");
 let saveTimer = null;
 let driveTimer = null;
 let driveSyncIntervalId = null;
-let driveSyncInFlight = false;
-let suppressNextDriveSync = false;
+let syncQueue = [];
+let syncInFlight = false;
+let suppressDriveSyncCount = 0;
 let hasPulledDriveState = false;
 let initialized = false;
 
 let driveCallbacks = {
   findCardContext: () => ({ card: null }),
+};
+
+const acquireSyncMutex = () =>
+  new Promise((resolve) => {
+    if (!syncInFlight) {
+      syncInFlight = true;
+      resolve();
+      return;
+    }
+    syncQueue = [resolve];
+  });
+
+const releaseSyncMutex = () => {
+  const next = syncQueue.shift();
+  if (next) {
+    next();
+    return;
+  }
+  syncInFlight = false;
 };
 
 export const schedulePersist = (state) => {
@@ -41,8 +61,8 @@ export const scheduleDriveSync = (
   state,
   { immediate = false, trigger = null, meta = null } = {},
 ) => {
-  if (suppressNextDriveSync) {
-    suppressNextDriveSync = false;
+  if (suppressDriveSyncCount > 0) {
+    suppressDriveSyncCount--;
     return;
   }
 
@@ -128,7 +148,7 @@ const runDriveSync = async ({
   throwOnError = false,
 } = {}) => {
   const snapshot = getDriveSnapshot();
-  if (driveSyncInFlight || snapshot.status !== "connected") return;
+  if (snapshot.status !== "connected") return;
 
   if (reason === "newtab") {
     const lastCheckedAt = snapshot.lastCheckedAt
@@ -142,15 +162,42 @@ const runDriveSync = async ({
     }
   }
 
-  driveSyncInFlight = true;
+  await acquireSyncMutex();
+
+  let lockReleased = false;
+  const releaseLock = () => {
+    if (lockReleased) return;
+    lockReleased = true;
+    releaseSyncMutex();
+  };
+
+  let timedOut = false;
+  const syncAbortController = new AbortController();
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    console.error("Drive sync timed out after 30s");
+    syncAbortController.abort();
+    releaseLock();
+  }, 30000);
+
   try {
+    if (timedOut) {
+      return;
+    }
+
     const remoteState = await pullFromDrive({
       markChecked: reason === "newtab",
+      signal: syncAbortController.signal,
     });
+
+    if (timedOut) {
+      return;
+    }
+
     const resolvedLocalState = localState ?? getState();
 
     if (reason === "connect" && remoteState) {
-      suppressNextDriveSync = true;
+      suppressDriveSyncCount++;
       replaceState(remoteState, { preserveTimestamp: true });
       return;
     }
@@ -168,15 +215,19 @@ const runDriveSync = async ({
           resolvedLocalState,
           meta.addedCards,
         );
-        suppressNextDriveSync = true;
+        suppressDriveSyncCount++;
         replaceState(mergedState);
-        await pushToDrive(mergedState);
+        await pushToDrive(mergedState, {
+          signal: syncAbortController.signal,
+        });
       } else {
-        suppressNextDriveSync = true;
+        suppressDriveSyncCount++;
         replaceState(remoteState, { preserveTimestamp: true });
       }
     } else {
-      await pushToDrive(resolvedLocalState);
+      await pushToDrive(resolvedLocalState, {
+        signal: syncAbortController.signal,
+      });
     }
   } catch (error) {
     console.error("Google Drive sync failed", error);
@@ -189,7 +240,8 @@ const runDriveSync = async ({
       throw error;
     }
   } finally {
-    driveSyncInFlight = false;
+    clearTimeout(timeoutId);
+    releaseLock();
   }
 };
 
@@ -206,7 +258,8 @@ export const stopDriveBackgroundSync = () => {
     clearInterval(driveSyncIntervalId);
     driveSyncIntervalId = null;
   }
-  driveSyncInFlight = false;
+  syncQueue = [];
+  syncInFlight = false;
 };
 
 export const handleDriveUpdate = (snapshot) => {
