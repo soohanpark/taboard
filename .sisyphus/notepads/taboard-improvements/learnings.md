@@ -341,3 +341,25 @@ Work session started. Plan has 21 tasks + 4 final verification tasks in 6 waves.
 - ✅ `node --check newtab/modals.js && node --check newtab/app.js`
 - ✅ LSP diagnostics clean for changed files (`newtab/modals.js`, `newtab/app.js`)
 - ✅ Evidence file saved: `.sisyphus/evidence/task-9-modals-exports.txt`
+
+## [2026-02-22] Task 10: tabs module extraction — COMPLETED
+
+### Changes Made
+- Created `newtab/tabs.js` and moved tab drawer concerns out of `app.js`:
+  - DOM refs: `tabListEl`, `tabCountEl`, `tabFilterInput`
+  - Tab state: `openTabs`, `tabFilter`, `cleanupTabListeners`, `tabUpdateTimer`
+  - Tab APIs: `fetchOpenTabs`, `renderOpenTabs`, `registerTabObservers`
+  - Safety helpers: `safeTabsQuery`, `safeTabsUpdate`, `closeBrowserTab`
+- Added `initTabs(callbacks)` in `tabs.js` to register tab drawer event handlers without importing app logic.
+- Added race-condition guard in `renderOpenTabs()`:
+  - `if (getDraggingCard()) return;`
+- Updated `newtab/app.js` to import tab APIs from `./tabs.js`, remove inlined tab logic, and initialize tab module via `initTabs({ addTabCardToBoard })` during bootstrap.
+
+### Key Learnings
+- `initTabs(callbacks)` keeps tab module decoupled from app-level state mutations and avoids circular imports.
+- Moving listener cleanup state (`cleanupTabListeners`) with observer registration keeps module ownership coherent.
+- Rendering guard during drag operations prevents tab list rerenders from interfering with active DnD interactions.
+
+### Verification
+- ✅ `node --check newtab/tabs.js && node --check newtab/app.js`
+- ✅ LSP diagnostics clean for changed files (`newtab/tabs.js`, `newtab/app.js`)

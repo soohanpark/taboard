@@ -22,12 +22,9 @@ import {
   PERSIST_DEBOUNCE_MS,
   DRIVE_SYNC_DEBOUNCE_MS,
   SEARCH_DEBOUNCE_MS,
-  TAB_UPDATE_DEBOUNCE_MS,
   DRIVE_SYNC_INTERVAL,
   NEWTAB_DRIVE_CHECK_INTERVAL,
-  TAB_DRAG_MIME,
   VIEW_MODES,
-  FALLBACK_FAVICON,
   DEFAULT_BOARD_NAME,
 } from "./constants.js";
 import {
@@ -45,6 +42,12 @@ import {
   openSpaceModal,
   initModals,
 } from "./modals.js";
+import {
+  fetchOpenTabs,
+  initTabs,
+  renderOpenTabs,
+  registerTabObservers,
+} from "./tabs.js";
 import {
   getHorizontalAfterElement,
   attachDropTargets,
@@ -68,9 +71,6 @@ import {
 const boardEl = document.getElementById("board");
 const spaceTabsEl = document.getElementById("space-tabs");
 const addColumnBtn = document.getElementById("add-column");
-const tabListEl = document.getElementById("tab-list");
-const tabCountEl = document.getElementById("tab-count");
-const tabFilterInput = document.getElementById("tab-filter");
 const searchControl = document.getElementById("search-control");
 const searchInput = document.getElementById("search-input");
 const searchFocusBtn = document.getElementById("search-focus");
@@ -83,9 +83,6 @@ let currentState = null;
 let saveTimer = null;
 let driveTimer = null;
 let searchDebounceTimer = null;
-let openTabs = [];
-let tabFilter = "";
-const cleanupTabListeners = [];
 let driveSyncIntervalId = null;
 
 const getActiveSpace = (state = currentState) => {
@@ -407,146 +404,6 @@ const handleDriveUpdate = (snapshot) => {
   }
 };
 
-const safeTabsQuery = (query) =>
-  new Promise((resolve) => {
-    if (!chrome?.tabs?.query) {
-      resolve([]);
-      return;
-    }
-    chrome.tabs.query(query, (tabs) => {
-      if (chrome.runtime?.lastError) {
-        console.warn("tabs.query failed", chrome.runtime.lastError);
-        resolve([]);
-        return;
-      }
-      resolve(tabs);
-    });
-  });
-
-const safeTabsUpdate = (tabId) => {
-  if (!chrome?.tabs?.update) return;
-  chrome.tabs.update(tabId, { active: true });
-};
-
-const closeBrowserTab = (tabId) => {
-  if (!tabId) return;
-  if (chrome?.tabs?.remove) {
-    chrome.tabs.remove(tabId, () => {
-      if (chrome.runtime?.lastError) {
-        console.warn(chrome.runtime.lastError);
-      } else {
-        fetchOpenTabs();
-      }
-    });
-  }
-};
-
-const renderOpenTabs = () => {
-  const filtered = openTabs.filter((tab) => {
-    if (!tabFilter) return true;
-    const haystack = `${tab.title} ${tab.url}`.toLowerCase();
-    return haystack.includes(tabFilter.toLowerCase());
-  });
-
-  tabCountEl.textContent = filtered.length;
-
-  const fragment = document.createDocumentFragment();
-  filtered.forEach((tab) => {
-    const item = document.createElement("div");
-    item.className = "tab-item";
-    item.dataset.tabId = tab.id;
-    item.dataset.tabTitle = tab.title ?? "";
-    item.dataset.tabUrl = tab.url ?? "";
-    const iconSrc =
-      tab.favIconUrl && /^https?:/i.test(tab.favIconUrl)
-        ? tab.favIconUrl
-        : FALLBACK_FAVICON;
-    item.dataset.tabIcon = iconSrc;
-    item.draggable = Boolean(tab.url);
-    item.tabIndex = 0;
-    item.setAttribute("role", "button");
-    item.role = "button";
-
-    const favicon = document.createElement("img");
-    favicon.className = "tab-favicon";
-    favicon.alt = "";
-    favicon.src = iconSrc;
-    favicon.addEventListener("error", () => {
-      favicon.src = FALLBACK_FAVICON;
-    });
-
-    const info = document.createElement("div");
-    info.className = "tab-info";
-
-    const title = document.createElement("p");
-    title.className = "tab-title";
-    title.textContent = tab.title;
-
-    const url = document.createElement("p");
-    url.className = "tab-url";
-    url.textContent = tab.url;
-
-    info.appendChild(title);
-    info.appendChild(url);
-    item.appendChild(favicon);
-    item.appendChild(info);
-
-    const closeBtn = document.createElement("button");
-    closeBtn.type = "button";
-    closeBtn.className = "tab-close";
-    closeBtn.dataset.closeTabId = tab.id;
-    closeBtn.title = "Close tab";
-    closeBtn.textContent = "×";
-    item.appendChild(closeBtn);
-
-    fragment.appendChild(item);
-  });
-
-  tabListEl.replaceChildren(fragment);
-};
-
-const fetchOpenTabs = async () => {
-  openTabs = await safeTabsQuery({ currentWindow: true });
-  renderOpenTabs();
-};
-
-const registerTabObservers = () => {
-  if (!chrome?.tabs) return;
-  let tabUpdateTimer = null;
-  const debouncedUpdate = () => {
-    clearTimeout(tabUpdateTimer);
-    tabUpdateTimer = setTimeout(fetchOpenTabs, TAB_UPDATE_DEBOUNCE_MS);
-  };
-  const events = [
-    chrome.tabs.onCreated,
-    chrome.tabs.onRemoved,
-    chrome.tabs.onUpdated,
-    chrome.tabs.onMoved,
-    chrome.tabs.onAttached,
-    chrome.tabs.onDetached,
-    chrome.tabs.onReplaced,
-    chrome.tabs.onActivated,
-  ];
-
-  events.forEach((event) => {
-    if (event?.addListener) {
-      event.addListener(debouncedUpdate);
-      cleanupTabListeners.push(() => event.removeListener(debouncedUpdate));
-    }
-  });
-
-  window.addEventListener("unload", () => {
-    while (cleanupTabListeners.length) {
-      const unsubscribe = cleanupTabListeners.pop();
-      try {
-        unsubscribe();
-      } catch (error) {
-        console.warn("Error while cleaning up tab listeners", error);
-      }
-    }
-  });
-};
-
 const bootstrap = async () => {
   hideSnackbar();
   initModals({
@@ -561,6 +418,8 @@ const bootstrap = async () => {
   });
   subscribe(handleStateChange);
   subscribeDrive(handleDriveUpdate);
+  initTabs({ addTabCardToBoard });
+  renderOpenTabs();
   const storedState = await loadStateFromStorage();
   initState(storedState ?? createDefaultState());
   await initDrive();
@@ -1181,11 +1040,6 @@ driveMenuDisconnectBtn?.addEventListener("click", async (event) => {
   showSnackbar("Disconnected from Google Drive.");
 });
 
-tabFilterInput.addEventListener("input", (event) => {
-  tabFilter = event.target.value.trim();
-  renderOpenTabs();
-});
-
 searchInput.addEventListener("input", (event) => {
   const value = event.target.value;
   clearTimeout(searchDebounceTimer);
@@ -1194,33 +1048,6 @@ searchInput.addEventListener("input", (event) => {
       draft.preferences.searchTerm = value;
     });
   }, SEARCH_DEBOUNCE_MS);
-});
-
-tabListEl.addEventListener("dragstart", (event) => {
-  const tabItem = event.target.closest(".tab-item");
-  if (!tabItem || !tabItem.dataset.tabUrl) return;
-  const payload = {
-    title: tabItem.dataset.tabTitle,
-    url: tabItem.dataset.tabUrl,
-    favIcon: tabItem.dataset.tabIcon,
-  };
-  event.dataTransfer.setData(TAB_DRAG_MIME, JSON.stringify(payload));
-  event.dataTransfer.setData("text/plain", tabItem.dataset.tabUrl);
-  event.dataTransfer.effectAllowed = "copy";
-});
-
-tabListEl.addEventListener("click", (event) => {
-  const closeBtn = event.target.closest(".tab-close");
-  if (closeBtn) {
-    event.stopPropagation();
-    const tabId = Number(closeBtn.dataset.closeTabId);
-    closeBrowserTab(tabId);
-    return;
-  }
-  const item = event.target.closest(".tab-item");
-  if (!item) return;
-  const tabId = Number(item.dataset.tabId);
-  safeTabsUpdate(tabId);
 });
 
 bootstrap();
