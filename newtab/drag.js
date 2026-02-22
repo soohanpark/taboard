@@ -90,6 +90,14 @@ export const clearDragCache = () => {
   cachedHorizontalRects = null;
 };
 
+export const cleanupDrag = () => {
+  draggingCard = null;
+  draggingBoardId = null;
+  draggingSpaceId = null;
+  suppressCardClick = false;
+  clearDragCache();
+};
+
 export const moveCard = (
   cardId,
   fromBoardId,

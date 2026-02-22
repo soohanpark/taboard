@@ -258,8 +258,16 @@ export const stopDriveBackgroundSync = () => {
     clearInterval(driveSyncIntervalId);
     driveSyncIntervalId = null;
   }
+  clearTimeout(driveTimer);
+  clearTimeout(saveTimer);
+  driveTimer = null;
+  saveTimer = null;
   syncQueue = [];
   syncInFlight = false;
+};
+
+export const cleanupDriveUI = () => {
+  stopDriveBackgroundSync();
 };
 
 export const handleDriveUpdate = (snapshot) => {

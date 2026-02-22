@@ -226,11 +226,10 @@ export const createCardElement = (card, boardId, searchTerm, options = {}) => {
     favicon.className = "card-favicon";
     favicon.alt = "";
     favicon.src = getCardFavicon(card);
-    favicon.addEventListener("error", () => {
-      if (favicon.dataset.fallbackApplied === "true") return;
-      favicon.dataset.fallbackApplied = "true";
+    favicon.onerror = () => {
       favicon.src = FALLBACK_FAVICON;
-    });
+      favicon.onerror = null;
+    };
     titleRow.appendChild(favicon);
   }
 

@@ -16,6 +16,7 @@ const cleanupTabListeners = [];
 let tabUpdateTimer = null;
 let tabFilterDebounceTimer = null;
 let tabsInitialized = false;
+let observersRegistered = false;
 
 let tabCallbacks = {
   addTabCardToBoard: null,
@@ -91,9 +92,10 @@ export const renderOpenTabs = () => {
     favicon.className = "tab-favicon";
     favicon.alt = "";
     favicon.src = iconSrc;
-    favicon.addEventListener("error", () => {
+    favicon.onerror = () => {
       favicon.src = FALLBACK_FAVICON;
-    });
+      favicon.onerror = null;
+    };
 
     const info = document.createElement("div");
     info.className = "tab-info";
@@ -132,6 +134,8 @@ export const fetchOpenTabs = async () => {
 
 export const registerTabObservers = () => {
   if (!chrome?.tabs) return;
+  if (observersRegistered) return;
+  observersRegistered = true;
 
   const debouncedUpdate = () => {
     clearTimeout(tabUpdateTimer);
@@ -166,6 +170,20 @@ export const registerTabObservers = () => {
       }
     }
   });
+};
+
+export const cleanupTabs = () => {
+  clearTimeout(tabFilterDebounceTimer);
+  tabFilterDebounceTimer = null;
+  tabFilter = "";
+  while (cleanupTabListeners.length) {
+    const unsubscribe = cleanupTabListeners.pop();
+    try {
+      unsubscribe();
+    } catch (error) {
+      console.warn("Error while cleaning up tab listeners", error);
+    }
+  }
 };
 
 export const initTabs = (callbacks = {}) => {
