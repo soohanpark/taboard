@@ -237,6 +237,13 @@ export const createCardElement = (card, boardId, searchTerm, options = {}) => {
     titleRow.appendChild(favicon);
   }
 
+  const typeIconMap = { link: "\uD83D\uDD17", note: "\uD83D\uDCDD", todo: "\u2713" };
+  const typeIcon = document.createElement("span");
+  typeIcon.className = "card-type-icon";
+  typeIcon.textContent = typeIconMap[card.type] ?? "";
+  typeIcon.setAttribute("aria-hidden", "true");
+  titleRow.appendChild(typeIcon);
+
   const title = document.createElement("p");
   title.className = "card-title";
   title.textContent = card.title;
@@ -358,14 +365,41 @@ export const renderBoard = (state, options = {}) => {
   boardEl.replaceChildren();
 
   if (!space) {
-    const placeholder = document.createElement("p");
-    placeholder.textContent = "Create a space first.";
-    boardEl.appendChild(placeholder);
+    const emptyState = document.createElement("div");
+    emptyState.className = "board-empty-state";
+    const icon = document.createElement("div");
+    icon.className = "board-empty-icon";
+    icon.textContent = "\uD83D\uDDC2\uFE0F";
+    const heading = document.createElement("p");
+    heading.className = "board-empty-title";
+    heading.textContent = "No space selected";
+    const sub = document.createElement("p");
+    sub.className = "board-empty-subtitle";
+    sub.textContent = "Create a space to get started.";
+    emptyState.appendChild(icon);
+    emptyState.appendChild(heading);
+    emptyState.appendChild(sub);
+    boardEl.appendChild(emptyState);
     return;
   }
 
   if (!space.boards.length) {
     boardEl.classList.add("board-empty");
+    const emptyState = document.createElement("div");
+    emptyState.className = "board-empty-state";
+    const icon = document.createElement("div");
+    icon.className = "board-empty-icon";
+    icon.textContent = "\uD83D\uDCCB";
+    const heading = document.createElement("p");
+    heading.className = "board-empty-title";
+    heading.textContent = "No boards yet";
+    const sub = document.createElement("p");
+    sub.className = "board-empty-subtitle";
+    sub.textContent = "Add a board to organize your cards.";
+    emptyState.appendChild(icon);
+    emptyState.appendChild(heading);
+    emptyState.appendChild(sub);
+    boardEl.appendChild(emptyState);
     appendAddBoardButton(options);
     return;
   }
