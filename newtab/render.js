@@ -9,6 +9,14 @@ const getSpaceTabsEl = (options = {}) =>
 const getAddColumnBtn = (options = {}) =>
   options.addColumnBtn ?? document.getElementById("add-column");
 
+let searchMemoCache = new Map();
+let lastRenderedBoardKey = null;
+let lastSpaceTabsKey = null;
+
+export const invalidateSearchCache = () => {
+  searchMemoCache.clear();
+};
+
 export const isSafeIconUrl = (icon) => {
   if (!icon || typeof icon !== "string") return false;
   const value = icon.trim();
@@ -64,16 +72,28 @@ export const formatCount = (count) =>
 
 export const cardMatchesSearch = (card, searchTerm) => {
   if (!searchTerm) return true;
+  const key = `${searchTerm}:${card.id}`;
+  if (searchMemoCache.has(key)) return searchMemoCache.get(key);
   const haystack = [card.title, card.note, card.url, card.tags?.join(" ") ?? ""]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
-  return haystack.includes(searchTerm.toLowerCase());
+  const result = haystack.includes(searchTerm.toLowerCase());
+  searchMemoCache.set(key, result);
+  return result;
 };
 
 export const renderSpaceTabs = (state, options = {}) => {
   const spaceTabsEl = getSpaceTabsEl(options);
   if (!spaceTabsEl) return;
+  const spaceKey =
+    state.spaces.map((s) => s.id + ":" + s.name).join("|") +
+    "|" +
+    state.preferences.activeSpaceId +
+    "|" +
+    state.preferences.viewMode;
+  if (spaceKey === lastSpaceTabsKey) return;
+  lastSpaceTabsKey = spaceKey;
   spaceTabsEl.replaceChildren();
 
   const favoritesTab = document.createElement("button");
@@ -288,18 +308,58 @@ export const appendAddBoardButton = (options = {}) => {
 export const renderBoard = (state, options = {}) => {
   const boardEl = getBoardEl(options);
   if (!boardEl) return;
+
+  const space = options.getActiveSpace?.(state) ?? null;
+  const searchTerm = state.preferences.searchTerm?.trim() ?? "";
+  const metaAction = options.metaAction ?? null;
+
+  const boardKey =
+    (space?.boards
+      ?.map(
+        (b) =>
+          b.id +
+          ":" +
+          b.name +
+          ":" +
+          b.cards
+            .map(
+              (c) =>
+                c.id +
+                "|" +
+                (c.favorite ? 1 : 0) +
+                "|" +
+                (c.done ? 1 : 0) +
+                "|" +
+                (c.updatedAt ?? ""),
+            )
+            .join(","),
+      )
+      .join("|") ?? "") +
+    "|" +
+    searchTerm;
+
+  if (
+    boardKey === lastRenderedBoardKey &&
+    metaAction !== "move-card" &&
+    metaAction !== "move-board"
+  ) {
+    return;
+  }
+  if (boardKey !== lastRenderedBoardKey) {
+    searchMemoCache.clear();
+  }
+  lastRenderedBoardKey = boardKey;
+
   boardEl.classList.remove("favorites-view");
   boardEl.classList.remove("board-empty");
   boardEl.replaceChildren();
-  const space = options.getActiveSpace?.(state) ?? null;
+
   if (!space) {
     const placeholder = document.createElement("p");
     placeholder.textContent = "Create a space first.";
     boardEl.appendChild(placeholder);
     return;
   }
-
-  const searchTerm = state.preferences.searchTerm?.trim();
 
   if (!space.boards.length) {
     boardEl.classList.add("board-empty");
@@ -408,6 +468,7 @@ export const getFavoriteGroups = (state, searchTerm) =>
 export const renderFavoritesBoard = (state, options = {}) => {
   const boardEl = getBoardEl(options);
   if (!boardEl) return;
+  lastRenderedBoardKey = null;
   boardEl.classList.add("favorites-view");
   boardEl.replaceChildren();
   const searchTerm = state.preferences.searchTerm?.trim();

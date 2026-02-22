@@ -2,6 +2,7 @@ import {
   FALLBACK_FAVICON,
   TAB_DRAG_MIME,
   TAB_UPDATE_DEBOUNCE_MS,
+  SEARCH_DEBOUNCE_MS,
 } from "./constants.js";
 import { getDraggingCard } from "./drag.js";
 
@@ -13,6 +14,7 @@ let openTabs = [];
 let tabFilter = "";
 const cleanupTabListeners = [];
 let tabUpdateTimer = null;
+let tabFilterDebounceTimer = null;
 let tabsInitialized = false;
 
 let tabCallbacks = {
@@ -177,7 +179,8 @@ export const initTabs = (callbacks = {}) => {
 
   tabFilterInput?.addEventListener("input", (event) => {
     tabFilter = event.target.value.trim();
-    renderOpenTabs();
+    clearTimeout(tabFilterDebounceTimer);
+    tabFilterDebounceTimer = setTimeout(() => renderOpenTabs(), SEARCH_DEBOUNCE_MS);
   });
 
   tabListEl?.addEventListener("dragstart", (event) => {

@@ -1,0 +1,14 @@
+12:let searchMemoCache = new Map();
+13:let lastRenderedBoardKey = null;
+14:let lastSpaceTabsKey = null;
+16:export const invalidateSearchCache = () => {
+17:  searchMemoCache.clear();
+76:  if (searchMemoCache.has(key)) return searchMemoCache.get(key);
+82:  searchMemoCache.set(key, result);
+95:  if (spaceKey === lastSpaceTabsKey) return;
+96:  lastSpaceTabsKey = spaceKey;
+342:    boardKey === lastRenderedBoardKey &&
+348:  if (boardKey !== lastRenderedBoardKey) {
+349:    searchMemoCache.clear();
+351:  lastRenderedBoardKey = boardKey;
+471:  lastRenderedBoardKey = null;

@@ -2,7 +2,7 @@ import { createDefaultState, generateId, initState, getRandomAccent, subscribe, 
 import { loadStateFromStorage } from "./storage.js";
 import { initDrive, subscribeDrive } from "./drive.js";
 import { SEARCH_DEBOUNCE_MS, VIEW_MODES, DEFAULT_BOARD_NAME } from "./constants.js";
-import { renderSpaceTabs, renderBoard, renderFavoritesBoard, resolveCardFavicon } from "./render.js";
+import { renderSpaceTabs, renderBoard, renderFavoritesBoard, resolveCardFavicon, invalidateSearchCache } from "./render.js";
 import { showSnackbar, hideSnackbar, openConfirm, openCardModal, closeModal, openSpaceModal, initModals } from "./modals.js";
 import { fetchOpenTabs, initTabs, renderOpenTabs, registerTabObservers } from "./tabs.js";
 import { getHorizontalAfterElement, attachDropTargets, enableColumnDrag, moveCardToSpace, moveBoard, moveSpace, clearSpaceTabDropState, clearSpaceDragging, clearColumnDropTargets, getDraggingCard, getDraggingBoardId, getDraggingSpaceId, isSuppressCardClick, setSuppressCardClick, setDraggingCard, setDraggingBoardId, setDraggingSpaceId, warmDragCache, clearDragCache } from "./drag.js";
@@ -15,6 +15,7 @@ const searchInput = document.getElementById("search-input");
 const searchFocusBtn = document.getElementById("search-focus");
 let currentState = null;
 let searchDebounceTimer = null;
+let prevSearchTerm = null;
 const getActiveSpace = (state = currentState) => state?.spaces?.find((s) => s.id === state.preferences?.activeSpaceId) ?? state?.spaces?.[0] ?? null;
 const findBoard = (space, boardId) => space?.boards?.find((board) => board.id === boardId) ?? null;
 const findSpaceById = (state, spaceId) => state?.spaces?.find((space) => space.id === spaceId) ?? null;
@@ -56,12 +57,22 @@ const handleStateChange = (state) => {
   const metaAction = meta?.action ?? null;
   if (state.meta) delete state.meta;
   currentState = state;
+  const currentSearchTerm = state.preferences.searchTerm ?? "";
+  if (
+    metaAction === "add-card" ||
+    metaAction === "edit-card" ||
+    metaAction === "delete-card" ||
+    currentSearchTerm !== prevSearchTerm
+  ) {
+    invalidateSearchCache();
+  }
+  prevSearchTerm = currentSearchTerm;
   renderSpaceTabs(state, { spaceTabsEl });
   if (state.preferences.viewMode === VIEW_MODES.FAVORITES) {
     renderFavoritesBoard(state, { boardEl });
     if (addColumnBtn) addColumnBtn.style.display = "none";
   } else {
-    renderBoard(state, { boardEl, addColumnBtn, getActiveSpace, attachDropTargets: (cardListEl) => attachDropTargets(cardListEl, { addTabCardToBoard }), enableColumnDrag: (column) => enableColumnDrag(column, { clearColumnDropTargets: () => clearColumnDropTargets(boardEl) }), onCardDragStart: handleCardDragStart, onCardDragEnd: handleCardDragEnd, animateCards: metaAction !== "move-card", animateColumns: metaAction !== "move-card" && metaAction !== "move-board" });
+    renderBoard(state, { boardEl, addColumnBtn, getActiveSpace, metaAction, attachDropTargets: (cardListEl) => attachDropTargets(cardListEl, { addTabCardToBoard }), enableColumnDrag: (column) => enableColumnDrag(column, { clearColumnDropTargets: () => clearColumnDropTargets(boardEl) }), onCardDragStart: handleCardDragStart, onCardDragEnd: handleCardDragEnd, animateCards: metaAction !== "move-card", animateColumns: metaAction !== "move-card" && metaAction !== "move-board" });
     if (addColumnBtn) addColumnBtn.style.display = "inline-flex";
   }
   if (searchInput !== document.activeElement) searchInput.value = state.preferences.searchTerm ?? "";
