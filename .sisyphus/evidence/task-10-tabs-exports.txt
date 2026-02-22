@@ -1,0 +1,22 @@
+Task 10 Evidence - Tab Drawer Extraction
+Date: 2026-02-22
+
+Changed files:
+- newtab/tabs.js (created)
+- newtab/app.js (modified)
+- .sisyphus/notepads/taboard-improvements/learnings.md (appended)
+
+Tab symbols remaining in app.js (should be import/usage only):
+46:  fetchOpenTabs,
+48:  renderOpenTabs,
+49:  registerTabObservers,
+426:  fetchOpenTabs();
+427:  registerTabObservers();
+
+Verification commands:
+- node --check newtab/tabs.js && node --check newtab/app.js -> PASS
+- lsp_diagnostics newtab/tabs.js -> No diagnostics found
+- lsp_diagnostics newtab/app.js -> No diagnostics found
+
+Commit target:
+- refactor(tabs): extract tab drawer logic and remove innerHTML reset

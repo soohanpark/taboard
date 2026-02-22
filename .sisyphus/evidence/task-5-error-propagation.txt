@@ -1,0 +1,126 @@
+TASK 5: storage.js Error Handling Improvements
+Evidence: Error propagation and retry logic
+
+REQUIREMENT:
+- withStorage() retries once after 100ms on failure
+- saveStateToStorage() returns { success: boolean }
+- saveDriveMetadata() and clearDriveMetadata() return { success: boolean }
+- All console.error calls preserved
+
+IMPLEMENTATION 1: withStorage() Retry Logic
+File: newtab/storage.js, lines 4-40
+
+const withStorage = async (method, payload) => {
+  try {
+    return await new Promise((resolve, reject) => {
+      // First attempt
+      if (!chrome?.storage?.local?.[method]) {
+        reject(new Error("chrome.storage.local is unavailable."));
+        return;
+      }
+      chrome.storage.local[method](payload, (result) => {
+        const error = chrome.runtime?.lastError;
+        if (error) {
+          reject(error);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+  } catch (err) {
+    // Retry once after 100ms on failure
+    await new Promise(r => setTimeout(r, 100));
+    return await new Promise((resolve, reject) => {
+      // Second attempt (identical logic)
+      if (!chrome?.storage?.local?.[method]) {
+        reject(new Error("chrome.storage.local is unavailable."));
+        return;
+      }
+      chrome.storage.local[method](payload, (result) => {
+        const error = chrome.runtime?.lastError;
+        if (error) {
+          reject(error);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+  }
+};
+
+VERIFICATION:
+✅ Line 21: catch (err) block catches first attempt failure
+✅ Line 23: await new Promise(r => setTimeout(r, 100)) waits 100ms
+✅ Line 24-38: Second attempt with identical Promise logic
+✅ If second attempt fails, error propagates to caller
+
+IMPLEMENTATION 2: saveStateToStorage() Return Status
+File: newtab/storage.js, lines 52-60
+
+export const saveStateToStorage = async (state) => {
+  try {
+    await withStorage("set", { [STATE_KEY]: state });
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to persist state", error);
+    return { success: false, error };
+  }
+};
+
+VERIFICATION:
+✅ Line 55: Returns { success: true } on success
+✅ Line 58: Returns { success: false, error } on failure
+✅ Line 57: console.error preserved
+✅ Caller in app.js (line 229) ignores return value, so no breaking change
+
+IMPLEMENTATION 3: saveDriveMetadata() Return Status
+File: newtab/storage.js, lines 72-80
+
+export const saveDriveMetadata = async (meta) => {
+  try {
+    await withStorage("set", { [DRIVE_META_KEY]: meta });
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to persist drive metadata", error);
+    return { success: false, error };
+  }
+};
+
+VERIFICATION:
+✅ Line 75: Returns { success: true } on success
+✅ Line 78: Returns { success: false, error } on failure
+✅ Line 77: console.error preserved
+
+IMPLEMENTATION 4: clearDriveMetadata() Return Status
+File: newtab/storage.js, lines 82-90
+
+export const clearDriveMetadata = async () => {
+  try {
+    await withStorage("remove", DRIVE_META_KEY);
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to clear drive metadata", error);
+    return { success: false, error };
+  }
+};
+
+VERIFICATION:
+✅ Line 85: Returns { success: true } on success
+✅ Line 88: Returns { success: false, error } on failure
+✅ Line 87: console.error preserved
+
+GREP VERIFICATION:
+All catch blocks that handle errors:
+- Line 21: catch (err) in withStorage — retries
+- Line 46: catch (error) in loadStateFromStorage — rethrows
+- Line 56: catch (error) in saveStateToStorage — returns status
+- Line 66: catch (error) in loadDriveMetadata — returns null
+- Line 76: catch (error) in saveDriveMetadata — returns status
+- Line 86: catch (error) in clearDriveMetadata — returns status
+
+All console.error calls preserved:
+- Line 47: console.error("Failed to load state", error)
+- Line 57: console.error("Failed to persist state", error)
+- Line 67: console.error("Failed to load drive metadata", error)
+- Line 77: console.error("Failed to persist drive metadata", error)
+- Line 87: console.error("Failed to clear drive metadata", error)

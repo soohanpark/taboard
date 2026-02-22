@@ -1,0 +1,29 @@
+Task 9 Evidence: modals extraction
+Date: 2026-02-22
+
+Files changed:
+- newtab/modals.js (created)
+- newtab/app.js (refactored imports, modal logic removed, init wiring added)
+
+Verification:
+1) Syntax check
+   - Command: node --check newtab/modals.js && node --check newtab/app.js
+   - Result: PASS (no output)
+
+2) Modal/snackbar/confirm extraction targets present in module
+   - Exports in newtab/modals.js:
+     - showSnackbar
+     - hideSnackbar
+     - openConfirm
+     - openCardModal
+     - closeModal
+     - openSpaceModal
+     - initModals
+
+3) App wiring
+   - app.js imports modal APIs from ./modals.js
+   - app.js initializes modal handlers via initModals({ addCard, editCard, deleteCard, addSpace, editSpace, deleteSpace, resolveCardFavicon })
+   - app.js no longer contains inline modal/form/confirm handler blocks
+
+4) Diagnostics
+   - LSP diagnostics: clean for newtab/app.js and newtab/modals.js

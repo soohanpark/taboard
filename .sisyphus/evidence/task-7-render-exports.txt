@@ -1,0 +1,25 @@
+Task 7 evidence: render module extraction
+
+Created file: newtab/render.js
+
+Exported APIs:
+- isSafeIconUrl
+- deriveFaviconFromUrl
+- resolveCardFavicon
+- getCardFavicon
+- formatCount
+- cardMatchesSearch
+- renderSpaceTabs
+- createCardElement
+- appendAddBoardButton
+- renderBoard
+- getFavoriteGroups
+- renderFavoritesBoard
+
+Updated app integration:
+- newtab/app.js imports rendering/favicons from ./render.js
+- rendering functions removed from newtab/app.js and invoked through render module
+
+Syntax verification:
+- node --check newtab/render.js && node --check newtab/app.js
+- Result: PASS (no output)

@@ -1,0 +1,10 @@
+Task 7 evidence: no innerHTML usage
+
+Command:
+grep -rn "innerHTML" newtab/*.js
+
+Result:
+- No matches
+
+Validation note:
+- Clearing containers now uses replaceChildren() in rendering code and tab list rendering.

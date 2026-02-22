@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -6,14 +6,22 @@
     <title>Taboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
     <link
       rel="stylesheet"
+      media="print"
+      onload="this.media = 'all'"
       href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css"
     />
+    <noscript
+      ><link
+        rel="stylesheet"
+        href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css"
+    /></noscript>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
@@ -40,6 +48,7 @@
                 aria-label="Search cards"
               />
               <button
+                type="button"
                 class="icon-button search-button"
                 id="search-focus"
                 title="Search (⌘/Ctrl + K)"
@@ -48,8 +57,14 @@
               </button>
             </div>
             <div class="drive-control" id="drive-control">
-              <button class="icon-button drive-button" id="drive-connect" title="Connect Google Drive">
+              <button
+                type="button"
+                class="icon-button drive-button"
+                id="drive-connect"
+                title="Connect Google Drive"
+              >
                 <svg viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg">
+                  <title>Google Drive</title>
                   <path
                     d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z"
                     fill="#0066da"
@@ -77,11 +92,24 @@
                 </svg>
                 <span>Google Drive Sync</span>
               </button>
-              <div class="drive-menu" id="drive-menu" role="menu" aria-label="Drive options">
-                <button type="button" class="drive-menu-item" id="drive-menu-sync">
+              <div
+                class="drive-menu"
+                id="drive-menu"
+                role="menu"
+                aria-label="Drive options"
+              >
+                <button
+                  type="button"
+                  class="drive-menu-item"
+                  id="drive-menu-sync"
+                >
                   Manual sync
                 </button>
-                <button type="button" class="drive-menu-item danger" id="drive-menu-disconnect">
+                <button
+                  type="button"
+                  class="drive-menu-item danger"
+                  id="drive-menu-disconnect"
+                >
                   Disconnect
                 </button>
               </div>
@@ -104,20 +132,32 @@
 
         <section class="board-wrapper">
           <div class="board" id="board"></div>
-          <button class="add-column" id="add-column" aria-label="Add board">+</button>
+          <button
+            type="button"
+            class="add-column"
+            id="add-column"
+            aria-label="Add board"
+          >
+            +
+          </button>
         </section>
       </main>
     </div>
 
     <section class="modal hidden" id="card-modal" aria-hidden="true">
       <div class="modal-backdrop" data-close="card"></div>
-      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div
+        class="modal-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+      >
         <header>
           <h3 id="modal-title">Card</h3>
         </header>
         <form id="card-form">
           <input type="hidden" name="cardId" />
-          <input type="hidden" name="sectionId" />
+          <input type="hidden" name="boardId" />
           <label>
             <span>Title</span>
             <input name="title" required />
@@ -143,8 +183,12 @@
             <input name="tags" placeholder="design, reading" />
           </label>
           <div class="form-actions">
-            <button type="button" class="ghost-button" data-close="card">Cancel</button>
-            <button type="button" class="ghost-button" data-delete-card>Delete</button>
+            <button type="button" class="ghost-button" data-close="card">
+              Cancel
+            </button>
+            <button type="button" class="ghost-button" data-delete-card>
+              Delete
+            </button>
             <button type="submit">Save</button>
           </div>
         </form>
@@ -153,7 +197,12 @@
 
     <section class="modal hidden" id="space-modal" aria-hidden="true">
       <div class="modal-backdrop" data-close="space"></div>
-      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="space-modal-title">
+      <div
+        class="modal-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="space-modal-title"
+      >
         <header>
           <h3 id="space-modal-title">Space</h3>
         </header>
@@ -164,8 +213,12 @@
             <input name="name" placeholder="e.g., WORK" required />
           </label>
           <div class="form-actions">
-            <button type="button" class="ghost-button" data-close="space">Cancel</button>
-            <button type="button" class="ghost-button" data-delete-space>Delete</button>
+            <button type="button" class="ghost-button" data-close="space">
+              Cancel
+            </button>
+            <button type="button" class="ghost-button" data-delete-space>
+              Delete
+            </button>
             <button type="submit">Save</button>
           </div>
         </form>
@@ -185,7 +238,9 @@
         </header>
         <p id="confirm-message"></p>
         <div class="form-actions">
-          <button type="button" class="ghost-button" id="confirm-cancel">Cancel</button>
+          <button type="button" class="ghost-button" id="confirm-cancel">
+            Cancel
+          </button>
           <button type="button" id="confirm-accept">Confirm</button>
         </div>
       </div>

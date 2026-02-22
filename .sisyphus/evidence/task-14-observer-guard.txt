@@ -1,0 +1,13 @@
+newtab/tabs.js:19:let observersRegistered = false;
+newtab/tabs.js:137:  if (observersRegistered) return;
+newtab/tabs.js:138:  observersRegistered = true;
+newtab/tabs.js:175:export const cleanupTabs = () => {
+newtab/drive-ui.js:269:export const cleanupDriveUI = () => {
+newtab/drag.js:93:export const cleanupDrag = () => {
+newtab/app.js:7:import { fetchOpenTabs, initTabs, renderOpenTabs, registerTabObservers, cleanupTabs } from "./tabs.js";
+newtab/app.js:8:import { getHorizontalAfterElement, attachDropTargets, enableColumnDrag, moveCardToSpace, moveBoard, moveSpace, clearSpaceTabDropState, clearSpaceDragging, clearColumnDropTargets, getDraggingCard, getDraggingBoardId, getDraggingSpaceId, isSuppressCardClick, setSuppressCardClick, setDraggingCard, setDraggingBoardId, setDraggingSpaceId, warmDragCache, clearDragCache, cleanupDrag } from "./drag.js";
+newtab/app.js:9:import { schedulePersist, scheduleDriveSync, handleDriveUpdate, initDriveUI, cleanupDriveUI } from "./drive-ui.js";
+newtab/app.js:273:window.addEventListener("beforeunload", () => {
+newtab/app.js:274:  cleanupTabs();
+newtab/app.js:275:  cleanupDriveUI();
+newtab/app.js:276:  cleanupDrag();

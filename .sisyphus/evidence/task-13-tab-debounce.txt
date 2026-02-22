@@ -1,0 +1,7 @@
+5:  SEARCH_DEBOUNCE_MS,
+17:let tabFilterDebounceTimer = null;
+136:  const debouncedUpdate = () => {
+154:      event.addListener(debouncedUpdate);
+155:      cleanupTabListeners.push(() => event.removeListener(debouncedUpdate));
+182:    clearTimeout(tabFilterDebounceTimer);
+183:    tabFilterDebounceTimer = setTimeout(() => renderOpenTabs(), SEARCH_DEBOUNCE_MS);

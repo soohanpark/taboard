@@ -1,0 +1,23 @@
+newtab/drag.js:9:let cachedCards = null;
+newtab/drag.js:10:let cachedRects = null;
+newtab/drag.js:50:  const cards = cachedCards ?? [...container.querySelectorAll(".card:not(.dragging)")];
+newtab/drag.js:51:  const rects = cachedRects ?? cards.map((el) => el.getBoundingClientRect());
+newtab/drag.js:81:export const warmDragCache = (container) => {
+newtab/drag.js:82:  cachedCards = [...container.querySelectorAll(".card:not(.dragging)")];
+newtab/drag.js:83:  cachedRects = cachedCards.map((el) => el.getBoundingClientRect());
+newtab/drag.js:86:export const clearDragCache = () => {
+newtab/drag.js:87:  cachedCards = null;
+newtab/drag.js:88:  cachedRects = null;
+newtab/drag.js:211:    requestAnimationFrame(() => {
+newtab/app.js:8:import { getHorizontalAfterElement, attachDropTargets, enableColumnDrag, moveCardToSpace, moveBoard, moveSpace, clearSpaceTabDropState, clearSpaceDragging, clearColumnDropTargets, getDraggingCard, getDraggingBoardId, getDraggingSpaceId, isSuppressCardClick, setSuppressCardClick, setDraggingCard, setDraggingBoardId, setDraggingSpaceId, warmDragCache, clearDragCache } from "./drag.js";
+newtab/app.js:44:  document.body.classList.add("drag-in-progress");
+newtab/app.js:46:  if (container) warmDragCache(container);
+newtab/app.js:51:  document.body.classList.remove("drag-in-progress");
+newtab/app.js:52:  clearDragCache();
+newtab/app.js:241:let boardDragRafPending = false;
+newtab/app.js:245:  if (boardDragRafPending) return;
+newtab/app.js:246:  boardDragRafPending = true;
+newtab/app.js:247:  requestAnimationFrame(() => {
+newtab/app.js:248:    boardDragRafPending = false;
+newtab/style.css:1336:.drag-in-progress .card,
+newtab/style.css:1337:.drag-in-progress .column {
