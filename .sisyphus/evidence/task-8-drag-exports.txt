@@ -1,0 +1,40 @@
+Task 8 Evidence: drag.js extraction
+Date: 2026-02-22
+
+1) New module created
+- File: newtab/drag.js
+- Contains exported drag helpers and drag state accessors/mutators.
+
+2) Export verification (grep)
+- 19 exports found in newtab/drag.js:
+  getDraggingCard
+  getDraggingBoardId
+  getDraggingSpaceId
+  isSuppressCardClick
+  setSuppressCardClick
+  setDraggingCard
+  setDraggingBoardId
+  setDraggingSpaceId
+  getDragAfterElement
+  getHorizontalAfterElement
+  moveCard
+  moveCardToSpace
+  moveBoard
+  moveSpace
+  attachDropTargets
+  clearSpaceTabDropState
+  clearSpaceDragging
+  clearColumnDropTargets
+  enableColumnDrag
+
+3) app.js wiring verification
+- app.js imports drag APIs from "./drag.js".
+- Direct references to draggingCard/draggingBoardId/draggingSpaceId/suppressCardClick removed from app.js.
+
+4) Syntax checks
+- Command: node --check newtab/drag.js && node --check newtab/app.js
+- Result: PASS
+
+5) LSP diagnostics
+- newtab/drag.js: No diagnostics found
+- newtab/app.js: No diagnostics found

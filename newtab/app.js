@@ -37,6 +37,27 @@ import {
   renderFavoritesBoard,
   resolveCardFavicon,
 } from "./render.js";
+import {
+  getDragAfterElement,
+  getHorizontalAfterElement,
+  attachDropTargets,
+  enableColumnDrag,
+  moveCard,
+  moveCardToSpace,
+  moveBoard,
+  moveSpace,
+  clearSpaceTabDropState,
+  clearSpaceDragging,
+  clearColumnDropTargets,
+  getDraggingCard,
+  getDraggingBoardId,
+  getDraggingSpaceId,
+  isSuppressCardClick,
+  setSuppressCardClick,
+  setDraggingCard,
+  setDraggingBoardId,
+  setDraggingSpaceId,
+} from "./drag.js";
 
 const boardEl = document.getElementById("board");
 const spaceTabsEl = document.getElementById("space-tabs");
@@ -71,13 +92,9 @@ let saveTimer = null;
 let driveTimer = null;
 let snackbarTimer = null;
 let searchDebounceTimer = null;
-let draggingCard = null;
-let draggingBoardId = null;
-let draggingSpaceId = null;
 let openTabs = [];
 let tabFilter = "";
 const cleanupTabListeners = [];
-let suppressCardClick = false;
 let driveSyncIntervalId = null;
 let confirmResolver = null;
 
@@ -369,214 +386,6 @@ const updateCardFormFields = (type) => {
   }
 };
 
-const getDragAfterElement = (container, y) => {
-  const cards = [...container.querySelectorAll(".card:not(.dragging)")];
-  return cards.reduce(
-    (closest, child) => {
-      const box = child.getBoundingClientRect();
-      const offset = y - (box.top + box.height / 2);
-      if (offset < 0 && offset > closest.offset) {
-        return { offset, element: child };
-      }
-      return closest;
-    },
-    { offset: Number.NEGATIVE_INFINITY, element: null },
-  ).element;
-};
-
-const getHorizontalAfterElement = (container, selector, x) => {
-  const items = [...container.querySelectorAll(selector)];
-  return items.reduce(
-    (closest, child) => {
-      const box = child.getBoundingClientRect();
-      const offset = x - (box.left + box.width / 2);
-      if (offset < 0 && offset > closest.offset) {
-        return { offset, element: child };
-      }
-      return closest;
-    },
-    { offset: Number.NEGATIVE_INFINITY, element: null },
-  ).element;
-};
-
-const attachDropTargets = (cardListEl) => {
-  cardListEl.addEventListener("dragover", (event) => {
-    const isTabDrag = Array.from(event.dataTransfer?.types ?? []).includes(
-      TAB_DRAG_MIME,
-    );
-    const isCardDrag = Boolean(draggingCard);
-    if (!isTabDrag && !isCardDrag) return;
-    event.preventDefault();
-    cardListEl.classList.add("drag-over");
-    event.dataTransfer.dropEffect = draggingCard ? "move" : "copy";
-  });
-
-  cardListEl.addEventListener("dragleave", () => {
-    cardListEl.classList.remove("drag-over");
-  });
-
-  cardListEl.addEventListener("drop", (event) => {
-    const isTabDrag = Array.from(event.dataTransfer?.types ?? []).includes(
-      TAB_DRAG_MIME,
-    );
-    const isCardDrag = Boolean(draggingCard);
-    if (!isTabDrag && !isCardDrag) return;
-    event.preventDefault();
-    cardListEl.classList.remove("drag-over");
-    const tabPayload = event.dataTransfer.getData(TAB_DRAG_MIME);
-    if (tabPayload) {
-      try {
-        const parsed = JSON.parse(tabPayload);
-        addTabCardToBoard(cardListEl.dataset.boardId, parsed);
-      } catch (error) {
-        console.warn("Could not parse drop data.", error);
-      }
-      return;
-    }
-    if (!draggingCard) return;
-    const afterElement = getDragAfterElement(cardListEl, event.clientY);
-    const cards = [...cardListEl.querySelectorAll(".card:not(.dragging)")];
-    let targetIndex = cards.length;
-    if (afterElement) {
-      targetIndex = cards.findIndex(
-        (el) => el.dataset.cardId === afterElement.dataset.cardId,
-      );
-    }
-    moveCard(
-      draggingCard.cardId,
-      draggingCard.boardId,
-      cardListEl.dataset.boardId,
-      targetIndex,
-      draggingCard.spaceId,
-      cardListEl.dataset.spaceId || null,
-    );
-    suppressCardClick = true;
-    setTimeout(() => {
-      suppressCardClick = false;
-    }, 0);
-  });
-};
-
-const moveCard = (
-  cardId,
-  fromBoardId,
-  toBoardId,
-  targetIndex,
-  fromSpaceId = null,
-  toSpaceId = null,
-) => {
-  updateState(
-    (draft) => {
-      const sourceSpace = fromSpaceId
-        ? findSpaceById(draft, fromSpaceId)
-        : getActiveSpace(draft);
-      const targetSpace =
-        toSpaceId && toSpaceId !== fromSpaceId
-          ? findSpaceById(draft, toSpaceId)
-          : (sourceSpace ?? getActiveSpace(draft));
-      if (!sourceSpace || !targetSpace) return;
-
-      const fromBoard = findBoard(sourceSpace, fromBoardId);
-      const toBoard = findBoard(targetSpace, toBoardId);
-      if (!fromBoard || !toBoard) return;
-
-      const cardIndex = fromBoard.cards.findIndex((card) => card.id === cardId);
-      if (cardIndex === -1) return;
-
-      const [card] = fromBoard.cards.splice(cardIndex, 1);
-      const normalizedIndex = Math.max(
-        0,
-        Math.min(targetIndex, toBoard.cards.length),
-      );
-      toBoard.cards.splice(normalizedIndex, 0, card);
-      card.updatedAt = new Date().toISOString();
-    },
-    { action: "move-card" },
-  );
-};
-
-const moveCardToSpace = (targetSpaceId) => {
-  if (!draggingCard) return;
-  const targetSpace = findSpaceById(currentState, targetSpaceId);
-  if (!targetSpace) return;
-  if (draggingCard.spaceId === targetSpaceId) {
-    showSnackbar("Card is already in this workspace.");
-    return;
-  }
-  if (!targetSpace.boards?.length) {
-    showSnackbar("Add a board to that space before moving cards.");
-    return;
-  }
-  const targetBoardId = targetSpace.boards[0].id;
-  moveCard(
-    draggingCard.cardId,
-    draggingCard.boardId,
-    targetBoardId,
-    0,
-    draggingCard.spaceId,
-    targetSpaceId,
-  );
-  suppressCardClick = true;
-  setTimeout(() => {
-    suppressCardClick = false;
-  }, 0);
-  showSnackbar(`Moved card to ${targetSpace.name}.`);
-};
-
-const moveBoard = (boardId, targetIndex, spaceId = null) => {
-  updateState(
-    (draft) => {
-      const space = spaceId
-        ? findSpaceById(draft, spaceId)
-        : getActiveSpace(draft);
-      if (!space) return;
-      const fromIndex = space.boards.findIndex((board) => board.id === boardId);
-      if (fromIndex === -1) return;
-      const [board] = space.boards.splice(fromIndex, 1);
-      const normalizedIndex = Math.max(
-        0,
-        Math.min(targetIndex, space.boards.length),
-      );
-      space.boards.splice(normalizedIndex, 0, board);
-    },
-    { action: "move-board" },
-  );
-};
-
-const moveSpace = (spaceId, targetIndex) => {
-  updateState(
-    (draft) => {
-      const fromIndex = draft.spaces.findIndex((space) => space.id === spaceId);
-      if (fromIndex === -1) return;
-      const [space] = draft.spaces.splice(fromIndex, 1);
-      const normalizedIndex = Math.max(
-        0,
-        Math.min(targetIndex, draft.spaces.length),
-      );
-      draft.spaces.splice(normalizedIndex, 0, space);
-    },
-    { action: "move-space" },
-  );
-};
-
-const clearSpaceTabDropState = () => {
-  const targets = spaceTabsEl.querySelectorAll(".space-tab-drop");
-  targets.forEach((tab) => tab.classList.remove("space-tab-drop"));
-};
-
-const clearSpaceDragging = () => {
-  spaceTabsEl
-    .querySelectorAll(".space-tab-drop, .space-tab.dragging")
-    .forEach((el) => {
-      el.classList.remove("space-tab-drop", "dragging");
-    });
-};
-
-const clearColumnDropTargets = () => {
-  const targets = boardEl.querySelectorAll(".column-drop-target");
-  targets.forEach((column) => column.classList.remove("column-drop-target"));
-};
-
 const handleCardDragStart = ({
   cardId,
   boardId,
@@ -585,41 +394,15 @@ const handleCardDragStart = ({
   cardEl,
   event,
 }) => {
-  draggingCard = { cardId, boardId, spaceId };
+  setDraggingCard({ cardId, boardId, spaceId });
   cardEl.classList.add("dragging");
   event.dataTransfer.effectAllowed = "move";
   event.dataTransfer.setData("text/plain", cardTitle);
 };
 
 const handleCardDragEnd = ({ cardEl }) => {
-  draggingCard = null;
+  setDraggingCard(null);
   cardEl.classList.remove("dragging");
-};
-
-const enableColumnDrag = (column) => {
-  const header = column.querySelector(".column-header");
-  if (!header) return;
-  header.draggable = true;
-  header.addEventListener("dragstart", (event) => {
-    const titleEl = event.target.closest(".column-title");
-    if (titleEl && document.activeElement === titleEl) {
-      event.preventDefault();
-      return;
-    }
-    if (event.target.closest(".column-controls")) {
-      event.preventDefault();
-      return;
-    }
-    if (event.target.closest(".card")) return;
-    draggingBoardId = column.dataset.boardId;
-    column.classList.add("dragging");
-    event.dataTransfer.effectAllowed = "move";
-  });
-  header.addEventListener("dragend", () => {
-    draggingBoardId = null;
-    column.classList.remove("dragging");
-    clearColumnDropTargets();
-  });
 };
 
 const openCardModal = ({ boardId, cardId = null, spaceId = null }) => {
@@ -706,8 +489,14 @@ const handleStateChange = (state) => {
       boardEl,
       addColumnBtn,
       getActiveSpace,
-      attachDropTargets,
-      enableColumnDrag,
+      attachDropTargets: (cardListEl) => {
+        attachDropTargets(cardListEl, { addTabCardToBoard });
+      },
+      enableColumnDrag: (column) => {
+        enableColumnDrag(column, {
+          clearColumnDropTargets: () => clearColumnDropTargets(boardEl),
+        });
+      },
       onCardDragStart: handleCardDragStart,
       onCardDragEnd: handleCardDragEnd,
       animateCards: metaAction !== "move-card",
@@ -929,36 +718,40 @@ spaceTabsEl.addEventListener("contextmenu", (event) => {
 spaceTabsEl.addEventListener("dragstart", (event) => {
   const tab = event.target.closest(".space-tab");
   if (!tab || !tab.dataset.spaceId) return;
-  draggingSpaceId = tab.dataset.spaceId;
+  setDraggingSpaceId(tab.dataset.spaceId);
   tab.classList.add("dragging");
   event.dataTransfer.effectAllowed = "move";
 });
 
 spaceTabsEl.addEventListener("dragover", (event) => {
-  if (draggingSpaceId) {
+  if (getDraggingSpaceId()) {
     event.preventDefault();
     const tab = event.target.closest(".space-tab");
-    clearSpaceTabDropState();
-    if (tab && tab.dataset.spaceId && tab.dataset.spaceId !== draggingSpaceId) {
+    clearSpaceTabDropState(spaceTabsEl);
+    if (
+      tab &&
+      tab.dataset.spaceId &&
+      tab.dataset.spaceId !== getDraggingSpaceId()
+    ) {
       tab.classList.add("space-tab-drop");
     }
     return;
   }
-  if (draggingCard) {
+  if (getDraggingCard()) {
     const tab = event.target.closest(".space-tab");
     if (!tab?.dataset.spaceId) return;
     event.preventDefault();
-    clearSpaceTabDropState();
+    clearSpaceTabDropState(spaceTabsEl);
     tab.classList.add("space-tab-drop");
   }
 });
 
 spaceTabsEl.addEventListener("dragleave", () => {
-  clearSpaceTabDropState();
+  clearSpaceTabDropState(spaceTabsEl);
 });
 
 spaceTabsEl.addEventListener("drop", (event) => {
-  if (draggingSpaceId) {
+  if (getDraggingSpaceId()) {
     event.preventDefault();
     const afterElement = getHorizontalAfterElement(
       spaceTabsEl,
@@ -976,28 +769,28 @@ spaceTabsEl.addEventListener("drop", (event) => {
         (tab) => tab.dataset.spaceId === afterElement.dataset.spaceId,
       );
     }
-    clearSpaceDragging();
-    moveSpace(draggingSpaceId, targetIndex);
-    draggingSpaceId = null;
+    clearSpaceDragging(spaceTabsEl);
+    moveSpace(getDraggingSpaceId(), targetIndex);
+    setDraggingSpaceId(null);
     return;
   }
-  if (draggingCard) {
+  if (getDraggingCard()) {
     const tab = event.target.closest(".space-tab");
     if (!tab?.dataset.spaceId) return;
     event.preventDefault();
-    clearSpaceTabDropState();
-    moveCardToSpace(tab.dataset.spaceId);
+    clearSpaceTabDropState(spaceTabsEl);
+    moveCardToSpace(tab.dataset.spaceId, { currentState, showSnackbar });
   }
 });
 
 spaceTabsEl.addEventListener("dragend", () => {
-  draggingSpaceId = null;
-  clearSpaceDragging();
+  setDraggingSpaceId(null);
+  clearSpaceDragging(spaceTabsEl);
 });
 
 boardEl.addEventListener("click", async (event) => {
-  if (suppressCardClick) {
-    suppressCardClick = false;
+  if (isSuppressCardClick()) {
+    setSuppressCardClick(false);
     return;
   }
   const cardActionEl = event.target.closest("[data-card-action]");
@@ -1075,21 +868,21 @@ boardEl.addEventListener("keydown", (event) => {
 });
 
 boardEl.addEventListener("dragover", (event) => {
-  if (!draggingBoardId) return;
+  if (!getDraggingBoardId()) return;
   event.preventDefault();
   const afterElement = getHorizontalAfterElement(
     boardEl,
     ".column:not(.dragging)",
     event.clientX,
   );
-  clearColumnDropTargets();
+  clearColumnDropTargets(boardEl);
   if (afterElement) {
     afterElement.classList.add("column-drop-target");
   }
 });
 
 boardEl.addEventListener("drop", (event) => {
-  if (!draggingBoardId) return;
+  if (!getDraggingBoardId()) return;
   event.preventDefault();
   const afterElement = getHorizontalAfterElement(
     boardEl,
@@ -1103,11 +896,11 @@ boardEl.addEventListener("drop", (event) => {
       (column) => column.dataset.boardId === afterElement.dataset.boardId,
     );
   }
-  clearColumnDropTargets();
+  clearColumnDropTargets(boardEl);
   const draggingColumn = boardEl.querySelector(".column.dragging");
   draggingColumn?.classList.remove("dragging");
-  moveBoard(draggingBoardId, targetIndex);
-  draggingBoardId = null;
+  moveBoard(getDraggingBoardId(), targetIndex);
+  setDraggingBoardId(null);
 });
 
 const handleCardAction = (action, boardId, cardId, spaceId = null) => {

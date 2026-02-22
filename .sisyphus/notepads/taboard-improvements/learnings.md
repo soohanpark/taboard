@@ -288,3 +288,29 @@ Work session started. Plan has 21 tasks + 4 final verification tasks in 6 waves.
 - ✅ Evidence files saved:
   - `.sisyphus/evidence/task-7-render-exports.txt`
   - `.sisyphus/evidence/task-7-no-innerhtml.txt`
+
+## [2026-02-22] Task 8: drag module extraction — COMPLETED
+
+### Changes Made
+- Created `newtab/drag.js` and moved drag state + helpers out of `app.js`.
+- Extracted and exported drag helpers:
+  - `getDragAfterElement`, `getHorizontalAfterElement`, `attachDropTargets`, `enableColumnDrag`
+  - `moveCard`, `moveCardToSpace`, `moveBoard`, `moveSpace`
+  - `clearSpaceTabDropState`, `clearSpaceDragging`, `clearColumnDropTargets`
+- Moved drag module state into `drag.js` scope:
+  - `draggingCard`, `draggingBoardId`, `draggingSpaceId`, `suppressCardClick`
+- Added state accessors/mutators in `drag.js`:
+  - `getDraggingCard`, `getDraggingBoardId`, `getDraggingSpaceId`, `isSuppressCardClick`
+  - `setSuppressCardClick`, `setDraggingCard`, `setDraggingBoardId`, `setDraggingSpaceId`
+- Updated `newtab/app.js` to import drag APIs and replace direct drag state usage with accessor/setter calls.
+- Kept top-level drag event wiring in `app.js` (space tabs + board listeners), while delegating helper behavior to `drag.js`.
+
+### Key Learnings
+- Callback injection remains the safest anti-circular-import pattern during modularization in this codebase.
+- `attachDropTargets` and `enableColumnDrag` can stay reusable when passed app-owned callbacks (`addTabCardToBoard`, `clearColumnDropTargets`).
+- Localized drag state inside `drag.js` reduces global mutation surface in `app.js` without changing behavior.
+
+### Verification
+- ✅ `node --check newtab/drag.js && node --check newtab/app.js`
+- ✅ LSP diagnostics clean for changed files (`newtab/drag.js`, `newtab/app.js`)
+- ✅ Evidence file saved: `.sisyphus/evidence/task-8-drag-exports.txt`
