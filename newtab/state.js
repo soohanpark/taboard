@@ -227,7 +227,7 @@ const normalizeState = (state) => {
 };
 
 const notify = () => {
-  const snapshot = Object.freeze(appState);
+  const snapshot = Object.freeze({ ...appState });
   for (const listener of listeners) {
     listener(snapshot);
   }
@@ -260,4 +260,5 @@ export const updateState = (mutator, meta = {}) => {
   draft.meta = { ...(draft.meta ?? {}), ...meta };
   appState = draft;
   notify();
+  delete appState.meta;
 };

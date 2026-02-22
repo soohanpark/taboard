@@ -150,7 +150,6 @@ const handleCardDragEnd = ({ cardEl }) => {
 const handleStateChange = (state) => {
   const meta = state.meta ? { ...state.meta } : null;
   const metaAction = meta?.action ?? null;
-  if (state.meta) delete state.meta;
   currentState = state;
   const currentSearchTerm = state.preferences.searchTerm ?? "";
   if (
