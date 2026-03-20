@@ -25,7 +25,7 @@ let driveTimer = null;
 let driveSyncIntervalId = null;
 let syncQueue = [];
 let syncInFlight = false;
-let suppressDriveSyncCount = 0;
+let isDriveSyncSuppressed = false;
 let hasPulledDriveState = false;
 let initialized = false;
 
@@ -40,7 +40,7 @@ const acquireSyncMutex = () =>
       resolve();
       return;
     }
-    syncQueue = [resolve];
+    syncQueue.push(resolve);
   });
 
 const releaseSyncMutex = () => {
@@ -61,8 +61,7 @@ export const scheduleDriveSync = (
   state,
   { immediate = false, trigger = null, meta = null } = {},
 ) => {
-  if (suppressDriveSyncCount > 0) {
-    suppressDriveSyncCount--;
+  if (isDriveSyncSuppressed) {
     return;
   }
 
@@ -201,8 +200,9 @@ const runDriveSync = async ({
     const resolvedLocalState = localState ?? getState();
 
     if (reason === "connect" && remoteState) {
-      suppressDriveSyncCount++;
+      isDriveSyncSuppressed = true;
       replaceState(remoteState, { preserveTimestamp: true });
+      isDriveSyncSuppressed = false;
       return;
     }
 
@@ -219,14 +219,16 @@ const runDriveSync = async ({
           resolvedLocalState,
           meta.addedCards,
         );
-        suppressDriveSyncCount++;
+        isDriveSyncSuppressed = true;
         replaceState(mergedState);
+        isDriveSyncSuppressed = false;
         await pushToDrive(mergedState, {
           signal: syncAbortController.signal,
         });
       } else {
-        suppressDriveSyncCount++;
+        isDriveSyncSuppressed = true;
         replaceState(remoteState, { preserveTimestamp: true });
+        isDriveSyncSuppressed = false;
       }
     } else {
       await pushToDrive(resolvedLocalState, {
