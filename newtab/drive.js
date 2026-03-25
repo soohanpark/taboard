@@ -194,6 +194,9 @@ const uploadData = async (token, fileId, data, signal = null) => {
   }
 
   if (!response.ok) {
+    if (response.status === 404) {
+      driveState.fileId = null;
+    }
     throw createDriveError(`Failed to upload data (${response.status}).`, {
       status: response.status,
     });
@@ -201,15 +204,22 @@ const uploadData = async (token, fileId, data, signal = null) => {
 };
 
 const downloadData = async (token, fileId, signal = null) => {
-  return fetchJson(
-    `${DRIVE_API}/${fileId}?alt=media`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
+  try {
+    return await fetchJson(
+      `${DRIVE_API}/${fileId}?alt=media`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       },
-    },
-    signal,
-  );
+      signal,
+    );
+  } catch (error) {
+    if (error?.status === 404) {
+      driveState.fileId = null;
+    }
+    throw error;
+  }
 };
 
 const fetchUserProfile = async (token, signal = null) => {
@@ -310,12 +320,35 @@ export const disconnectDrive = async () => {
   }
 };
 
+const removeCachedToken = (token) =>
+  new Promise((resolve) => {
+    if (!chrome?.identity?.removeCachedAuthToken) {
+      resolve();
+      return;
+    }
+    chrome.identity.removeCachedAuthToken({ token }, () => resolve());
+  });
+
 const withToken = async (interactive = false) => {
   try {
     return await getAuthToken(interactive);
   } catch (error) {
     if (!interactive) {
-      return getAuthToken(true);
+      return await getAuthToken(true);
+    }
+    throw error;
+  }
+};
+
+const withFreshToken = async (fn) => {
+  const token = await withToken(false);
+  try {
+    return await fn(token);
+  } catch (error) {
+    if (error?.status === 401) {
+      await removeCachedToken(token);
+      const freshToken = await withToken(true);
+      return await fn(freshToken);
     }
     throw error;
   }
@@ -342,9 +375,10 @@ export const pushToDrive = async (state, options = {}) => {
 
   try {
     await withRetry(async () => {
-      const token = await withToken(false);
-      const fileId = await ensureDriveFile(token, signal);
-      await uploadData(token, fileId, stripFavicons(state), signal);
+      await withFreshToken(async (token) => {
+        const fileId = await ensureDriveFile(token, signal);
+        await uploadData(token, fileId, stripFavicons(state), signal);
+      });
     });
     driveState.lastSyncedAt = new Date().toISOString();
     driveState.syncing = false;
@@ -371,13 +405,19 @@ export const pullFromDrive = async (options = {}) => {
   try {
     const { signal = null } = options;
     const data = await withRetry(async () => {
-      const token = await withToken(false);
-      const fileId = await ensureDriveFile(token, signal);
-      return downloadData(token, fileId, signal);
+      return await withFreshToken(async (token) => {
+        const fileId = await ensureDriveFile(token, signal);
+        return downloadData(token, fileId, signal);
+      });
     });
     if (options.markChecked) {
       driveState.lastCheckedAt = new Date().toISOString();
       await persistMeta();
+    }
+    if (!data || typeof data !== "object" || !Array.isArray(data.spaces)) {
+      throw createDriveError(
+        "Invalid data format received from Drive.",
+      );
     }
     driveState.syncing = false;
     driveState.lastError = null;
