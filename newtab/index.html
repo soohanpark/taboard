@@ -134,19 +134,39 @@
           <nav class="board-sidebar" id="board-sidebar" aria-label="Boards">
             <div class="board-sidebar-header">
               <h2 class="board-sidebar-title">Boards</h2>
-              <button
-                type="button"
-                class="board-sidebar-add"
-                id="add-column"
-                aria-label="Add board"
-                title="Add board"
-              >
-                +
-              </button>
+              <div class="board-sidebar-header-actions">
+                <button
+                  type="button"
+                  class="board-sidebar-add"
+                  id="add-column"
+                  aria-label="Add board"
+                  title="Add board"
+                >
+                  +
+                </button>
+                <button
+                  type="button"
+                  class="board-sidebar-toggle"
+                  id="sidebar-toggle"
+                  aria-label="Toggle sidebar"
+                  title="Toggle sidebar"
+                >
+                  ‹
+                </button>
+              </div>
             </div>
             <ul class="board-sidebar-list" id="board-sidebar-list"></ul>
           </nav>
           <div class="board-detail">
+            <button
+              type="button"
+              class="sidebar-expand-btn"
+              id="sidebar-expand"
+              aria-label="Show sidebar"
+              title="Show boards sidebar"
+            >
+              ›
+            </button>
             <div class="board" id="board"></div>
           </div>
         </section>

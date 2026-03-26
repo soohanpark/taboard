@@ -352,6 +352,13 @@ export const renderBoardSidebar = (state, options = {}) => {
       li.classList.add("active");
     }
     li.dataset.boardId = board.id;
+    li.draggable = true;
+    li.tabIndex = 0;
+    li.setAttribute("role", "option");
+    li.setAttribute(
+      "aria-selected",
+      board.id === activeBoardId ? "true" : "false",
+    );
 
     const name = document.createElement("span");
     name.className = "board-sidebar-item-name";

@@ -83,6 +83,21 @@ export const getHorizontalAfterElement = (container, selector, x) => {
   ).element;
 };
 
+export const getVerticalAfterElement = (container, selector, y) => {
+  const items = [...container.querySelectorAll(selector)];
+  return items.reduce(
+    (closest, child) => {
+      const box = child.getBoundingClientRect();
+      const offset = y - (box.top + box.height / 2);
+      if (offset < 0 && offset > closest.offset) {
+        return { offset, element: child };
+      }
+      return closest;
+    },
+    { offset: Number.NEGATIVE_INFINITY, element: null },
+  ).element;
+};
+
 export const warmDragCache = (container) => {
   cachedCards = [...container.querySelectorAll(".card:not(.dragging)")];
   cachedRects = cachedCards.map((el) => el.getBoundingClientRect());

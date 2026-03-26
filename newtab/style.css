@@ -591,6 +591,12 @@ body {
   padding: var(--space-4) var(--space-4) var(--space-3);
 }
 
+.board-sidebar-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
 .board-sidebar-title {
   margin: 0;
   font-size: var(--font-sm);
@@ -655,6 +661,22 @@ body {
   background: var(--accent-light);
 }
 
+.board-sidebar-item.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+.board-sidebar-item.sidebar-drop-target {
+  border-top: 2px solid var(--accent);
+  padding-top: calc(var(--space-2-5) - 2px);
+}
+
+.board-sidebar-item.tab-drop-target {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
 .board-sidebar-item.active .board-sidebar-item-name {
   color: var(--accent);
   font-weight: 600;
@@ -687,6 +709,85 @@ body {
   transition: all var(--transition-fast);
 }
 
+/* Sidebar toggle button */
+.board-sidebar-toggle {
+  border: none;
+  background: rgba(0, 0, 0, 0.04);
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: var(--font-lg);
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+  line-height: 1;
+}
+
+.board-sidebar-toggle:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--text-primary);
+}
+
+.board-sidebar-toggle:active {
+  transform: scale(0.9);
+}
+
+/* Collapsed sidebar state */
+.board-sidebar.board-sidebar-collapsed {
+  width: 0;
+  min-width: 0;
+  border: none;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.board-sidebar-collapsed + .board-detail .board {
+  border-radius: var(--radius-2xl);
+  border-left: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+/* Expand button (visible when sidebar is collapsed) */
+.sidebar-expand-btn {
+  display: none;
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: 5;
+  border: none;
+  background: var(--surface-elevated);
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: var(--font-lg);
+  font-weight: 500;
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-fast);
+  line-height: 1;
+}
+
+.sidebar-expand-btn:hover {
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-md);
+  color: var(--text-primary);
+}
+
+.sidebar-expand-btn:active {
+  transform: scale(0.9);
+}
+
+.board-sidebar-collapsed + .board-detail .sidebar-expand-btn {
+  display: flex;
+}
+
 /* ========================================
    Board Detail — Single Board View
    ======================================== */
@@ -696,6 +797,7 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 .board {
@@ -1547,7 +1649,11 @@ button:active {
 .card-floating-button:focus-visible,
 .icon-button:focus-visible,
 .ghost-button:focus-visible,
-.drive-menu-item:focus-visible {
+.drive-menu-item:focus-visible,
+.board-sidebar-item:focus-visible,
+.board-sidebar-add:focus-visible,
+.board-sidebar-toggle:focus-visible,
+.sidebar-expand-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -1623,6 +1729,31 @@ button:active {
   .workspace {
     padding: var(--space-4);
     min-height: 0;
+  }
+
+  .board-sidebar {
+    width: 200px;
+    min-width: 200px;
+  }
+}
+
+@media (max-width: 768px) {
+  .board-sidebar {
+    width: 0;
+    min-width: 0;
+    border: none;
+    opacity: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .board-detail .sidebar-expand-btn {
+    display: flex;
+  }
+
+  .board-detail .board {
+    border-radius: var(--radius-2xl);
+    border-left: 1px solid rgba(255, 255, 255, 0.6);
   }
 }
 .tab-drawer:not(:hover) .tab-item {
@@ -1858,6 +1989,30 @@ button:active {
 
   .board-sidebar-add:hover {
     background: var(--accent-light);
+  }
+
+  .board-sidebar-toggle {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-secondary);
+  }
+
+  .board-sidebar-toggle:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: var(--text-primary);
+  }
+
+  .sidebar-expand-btn {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+  }
+
+  .sidebar-expand-btn:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+
+  .board-sidebar-collapsed + .board-detail .board {
+    border-color: rgba(255, 255, 255, 0.08);
   }
 
   .board-sidebar-item:hover {
