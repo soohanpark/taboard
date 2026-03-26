@@ -6,9 +6,6 @@ const getBoardEl = (options = {}) =>
 const getSpaceTabsEl = (options = {}) =>
   options.spaceTabsEl ?? document.getElementById("space-tabs");
 
-const getAddColumnBtn = (options = {}) =>
-  options.addColumnBtn ?? document.getElementById("add-column");
-
 let searchMemoCache = new Map();
 let lastRenderedBoardKey = null;
 let lastSpaceTabsKey = null;

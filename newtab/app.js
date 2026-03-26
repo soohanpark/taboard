@@ -204,7 +204,6 @@ const handleStateChange = (state) => {
     });
     renderBoard(state, {
       boardEl,
-      addColumnBtn,
       getActiveSpace,
       metaAction,
       attachDropTargets: (cardListEl) =>
@@ -753,7 +752,12 @@ boardSidebarListEl?.addEventListener("dragend", () => {
     .forEach((el) => el.classList.remove("dragging", "sidebar-drop-target"));
 });
 const toggleSidebar = () => {
-  boardSidebarEl?.classList.toggle("board-sidebar-collapsed");
+  const isSmallScreen = window.matchMedia("(max-width: 768px)").matches;
+  if (isSmallScreen) {
+    boardSidebarEl?.classList.toggle("board-sidebar-mobile-open");
+  } else {
+    boardSidebarEl?.classList.toggle("board-sidebar-collapsed");
+  }
 };
 sidebarToggleBtn?.addEventListener("click", toggleSidebar);
 sidebarExpandBtn?.addEventListener("click", toggleSidebar);

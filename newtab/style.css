@@ -555,6 +555,7 @@ body {
   display: flex;
   flex-direction: row;
   gap: 0;
+  position: relative;
 }
 
 /* ========================================
@@ -1747,8 +1748,28 @@ button:active {
     overflow: hidden;
   }
 
+  /* Override: expand sidebar on small screens via toggle */
+  .board-sidebar.board-sidebar-mobile-open {
+    width: 240px;
+    min-width: 240px;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    border-right: 1px solid var(--border-light);
+    opacity: 1;
+    pointer-events: auto;
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 10;
+    box-shadow: var(--shadow-lg);
+  }
+
   .board-detail .sidebar-expand-btn {
     display: flex;
+  }
+
+  .board-sidebar.board-sidebar-mobile-open + .board-detail .sidebar-expand-btn {
+    display: none;
   }
 
   .board-detail .board {
@@ -2012,6 +2033,11 @@ button:active {
   }
 
   .board-sidebar-collapsed + .board-detail .board {
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .board-sidebar.board-sidebar-mobile-open {
+    background: rgba(44, 44, 46, 0.95);
     border-color: rgba(255, 255, 255, 0.08);
   }
 
