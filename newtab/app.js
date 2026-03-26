@@ -159,8 +159,18 @@ const ensureActiveBoardId = (state) => {
   if (!space?.boards?.length) return;
   const activeBoardId = state.preferences.activeBoardId;
   if (activeBoardId && space.boards.some((b) => b.id === activeBoardId)) return;
-  updateState((draft) => {
-    draft.preferences.activeBoardId = space.boards[0]?.id ?? null;
+  // Defer the state correction to avoid re-entrant updateState inside
+  // handleStateChange, which would cause schedulePersist to save stale state.
+  queueMicrotask(() => {
+    const current = getActiveSpace();
+    if (!current?.boards?.length) return;
+    const currentId = currentState?.preferences?.activeBoardId;
+    if (currentId && current.boards.some((b) => b.id === currentId)) return;
+    updateState((draft) => {
+      const s = getActiveSpace(draft);
+      if (!s?.boards?.length) return;
+      draft.preferences.activeBoardId = s.boards[0]?.id ?? null;
+    });
   });
 };
 const handleStateChange = (state) => {
@@ -449,7 +459,8 @@ spaceTabsEl.addEventListener("click", (event) => {
     updateState((draft) => {
       draft.preferences.viewMode = VIEW_MODES.SPACES;
       draft.preferences.activeSpaceId = tab.dataset.spaceId;
-      draft.preferences.activeBoardId = null;
+      const newSpace = draft.spaces.find((s) => s.id === tab.dataset.spaceId);
+      draft.preferences.activeBoardId = newSpace?.boards?.[0]?.id ?? null;
     });
 });
 spaceTabsEl.addEventListener("contextmenu", (event) => {

@@ -223,6 +223,26 @@ const normalizeState = (state) => {
       };
     });
 
+  // Ensure activeBoardId is valid for the active space
+  const normalizedActiveSpace = next.spaces.find(
+    (s) => s.id === next.preferences.activeSpaceId,
+  );
+  if (next.preferences.activeBoardId && normalizedActiveSpace) {
+    const boardExists = normalizedActiveSpace.boards.some(
+      (b) => b.id === next.preferences.activeBoardId,
+    );
+    if (!boardExists) {
+      next.preferences.activeBoardId =
+        normalizedActiveSpace.boards[0]?.id ?? null;
+    }
+  } else if (
+    !next.preferences.activeBoardId &&
+    normalizedActiveSpace?.boards?.length
+  ) {
+    next.preferences.activeBoardId =
+      normalizedActiveSpace.boards[0]?.id ?? null;
+  }
+
   next.lastUpdated = next.lastUpdated ?? new Date().toISOString();
   return next;
 };
