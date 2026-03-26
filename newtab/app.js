@@ -16,6 +16,7 @@ import {
 import {
   renderSpaceTabs,
   renderBoard,
+  renderBoardSidebar,
   renderFavoritesBoard,
   resolveCardFavicon,
   invalidateSearchCache,
@@ -68,6 +69,8 @@ import {
 const boardEl = document.getElementById("board");
 const spaceTabsEl = document.getElementById("space-tabs");
 const addColumnBtn = document.getElementById("add-column");
+const boardSidebarListEl = document.getElementById("board-sidebar-list");
+const boardSidebarEl = document.getElementById("board-sidebar");
 const searchControl = document.getElementById("search-control");
 const searchInput = document.getElementById("search-input");
 const searchFocusBtn = document.getElementById("search-focus");
@@ -147,6 +150,17 @@ const handleCardDragEnd = ({ cardEl }) => {
   document.body.classList.remove("drag-in-progress");
   clearDragCache();
 };
+const ensureActiveBoardId = (state) => {
+  const space = getActiveSpace(state);
+  if (!space || !space.boards.length) return;
+  const activeBoardId = state.preferences.activeBoardId;
+  const exists = space.boards.some((b) => b.id === activeBoardId);
+  if (!exists) {
+    updateState((draft) => {
+      draft.preferences.activeBoardId = space.boards[0]?.id ?? null;
+    });
+  }
+};
 const handleStateChange = (state) => {
   const meta = state.meta ? { ...state.meta } : null;
   const metaAction = meta?.action ?? null;
@@ -164,8 +178,18 @@ const handleStateChange = (state) => {
   renderSpaceTabs(state, { spaceTabsEl });
   if (state.preferences.viewMode === VIEW_MODES.FAVORITES) {
     renderFavoritesBoard(state, { boardEl });
-    if (addColumnBtn) addColumnBtn.style.display = "none";
+    renderBoardSidebar(state, {
+      sidebarListEl: boardSidebarListEl,
+      sidebarEl: boardSidebarEl,
+      getActiveSpace,
+    });
   } else {
+    ensureActiveBoardId(state);
+    renderBoardSidebar(state, {
+      sidebarListEl: boardSidebarListEl,
+      sidebarEl: boardSidebarEl,
+      getActiveSpace,
+    });
     renderBoard(state, {
       boardEl,
       addColumnBtn,
@@ -182,7 +206,6 @@ const handleStateChange = (state) => {
       animateCards: metaAction !== "move-card",
       animateColumns: metaAction !== "move-card" && metaAction !== "move-board",
     });
-    if (addColumnBtn) addColumnBtn.style.display = "inline-flex";
   }
   if (searchInput !== document.activeElement)
     searchInput.value = state.preferences.searchTerm ?? "";
@@ -424,6 +447,7 @@ spaceTabsEl.addEventListener("click", (event) => {
     updateState((draft) => {
       draft.preferences.viewMode = VIEW_MODES.SPACES;
       draft.preferences.activeSpaceId = tab.dataset.spaceId;
+      draft.preferences.activeBoardId = null;
     });
 });
 spaceTabsEl.addEventListener("contextmenu", (event) => {
@@ -600,17 +624,36 @@ boardEl.addEventListener("contextmenu", (event) => {
     spaceId: card.dataset.spaceId || null,
   });
 });
+boardSidebarListEl?.addEventListener("click", (event) => {
+  const item = event.target.closest(".board-sidebar-item");
+  if (!item?.dataset.boardId) return;
+  updateState((draft) => {
+    draft.preferences.activeBoardId = item.dataset.boardId;
+  });
+});
+boardSidebarListEl?.addEventListener("contextmenu", (event) => {
+  const item = event.target.closest(".board-sidebar-item");
+  if (!item?.dataset.boardId) return;
+  event.preventDefault();
+  // Select the board on right-click as well
+  updateState((draft) => {
+    draft.preferences.activeBoardId = item.dataset.boardId;
+  });
+});
 addColumnBtn?.addEventListener("click", () => {
   if (currentState?.preferences.viewMode === VIEW_MODES.FAVORITES)
     return showSnackbar("You can't add boards while in Favorites view.");
+  const newBoardId = generateId("board");
   updateState((draft) => {
     const active = getActiveSpace(draft);
-    if (active)
+    if (active) {
       active.boards.push({
-        id: generateId("board"),
+        id: newBoardId,
         name: "New board",
         cards: [],
       });
+      draft.preferences.activeBoardId = newBoardId;
+    }
   });
   showSnackbar("Board added.");
 });

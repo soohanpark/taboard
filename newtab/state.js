@@ -157,6 +157,7 @@ const normalizeState = (state) => {
     next.preferences.activeSpaceId = next.spaces[0].id;
   }
   next.preferences.searchTerm = next.preferences.searchTerm ?? "";
+  next.preferences.activeBoardId = next.preferences.activeBoardId ?? null;
   if (next.preferences.viewMode !== "favorites") {
     next.preferences.viewMode = "spaces";
   }

@@ -131,15 +131,24 @@
         </header>
 
         <section class="board-wrapper">
-          <div class="board" id="board"></div>
-          <button
-            type="button"
-            class="add-column"
-            id="add-column"
-            aria-label="Add board"
-          >
-            +
-          </button>
+          <nav class="board-sidebar" id="board-sidebar" aria-label="Boards">
+            <div class="board-sidebar-header">
+              <h2 class="board-sidebar-title">Boards</h2>
+              <button
+                type="button"
+                class="board-sidebar-add"
+                id="add-column"
+                aria-label="Add board"
+                title="Add board"
+              >
+                +
+              </button>
+            </div>
+            <ul class="board-sidebar-list" id="board-sidebar-list"></ul>
+          </nav>
+          <div class="board-detail">
+            <div class="board" id="board"></div>
+          </div>
         </section>
       </main>
     </div>

@@ -12,6 +12,7 @@ const getAddColumnBtn = (options = {}) =>
 let searchMemoCache = new Map();
 let lastRenderedBoardKey = null;
 let lastSpaceTabsKey = null;
+let lastSidebarKey = null;
 
 export const invalidateSearchCache = () => {
   searchMemoCache.clear();
@@ -314,15 +315,60 @@ export const createCardElement = (card, boardId, searchTerm, options = {}) => {
   return cardEl;
 };
 
+export const renderBoardSidebar = (state, options = {}) => {
+  const sidebarListEl =
+    options.sidebarListEl ?? document.getElementById("board-sidebar-list");
+  const sidebarEl =
+    options.sidebarEl ?? document.getElementById("board-sidebar");
+  if (!sidebarListEl || !sidebarEl) return;
+
+  const space = options.getActiveSpace?.(state) ?? null;
+  const activeBoardId = state.preferences.activeBoardId ?? null;
+  const isFavorites = state.preferences.viewMode === VIEW_MODES.FAVORITES;
+
+  if (isFavorites) {
+    sidebarEl.classList.add("board-sidebar-hidden");
+    return;
+  }
+  sidebarEl.classList.remove("board-sidebar-hidden");
+
+  const sidebarKey =
+    (space?.boards
+      ?.map((b) => b.id + ":" + b.name + ":" + b.cards.length)
+      .join("|") ?? "") +
+    "|" +
+    activeBoardId;
+  if (sidebarKey === lastSidebarKey) return;
+  lastSidebarKey = sidebarKey;
+
+  sidebarListEl.replaceChildren();
+
+  if (!space || !space.boards.length) return;
+
+  space.boards.forEach((board) => {
+    const li = document.createElement("li");
+    li.className = "board-sidebar-item";
+    if (board.id === activeBoardId) {
+      li.classList.add("active");
+    }
+    li.dataset.boardId = board.id;
+
+    const name = document.createElement("span");
+    name.className = "board-sidebar-item-name";
+    name.textContent = board.name;
+
+    const count = document.createElement("span");
+    count.className = "board-sidebar-item-count";
+    count.textContent = board.cards.length;
+
+    li.appendChild(name);
+    li.appendChild(count);
+    sidebarListEl.appendChild(li);
+  });
+};
+
 export const appendAddBoardButton = (options = {}) => {
-  const addColumnBtn = getAddColumnBtn(options);
-  const boardEl = getBoardEl(options);
-  if (!addColumnBtn || !boardEl) return;
-  addColumnBtn.classList.add("add-column-tile");
-  addColumnBtn.textContent = "+";
-  addColumnBtn.setAttribute("aria-label", "Add board");
-  addColumnBtn.style.display = "inline-flex";
-  boardEl.appendChild(addColumnBtn);
+  // No longer appends inside the board grid; add-column is in the sidebar header now
 };
 
 export const renderBoard = (state, options = {}) => {
@@ -332,29 +378,34 @@ export const renderBoard = (state, options = {}) => {
   const space = options.getActiveSpace?.(state) ?? null;
   const searchTerm = state.preferences.searchTerm?.trim() ?? "";
   const metaAction = options.metaAction ?? null;
+  const activeBoardId = state.preferences.activeBoardId ?? null;
+
+  // Find active board, or fallback to first board
+  const activeBoard = activeBoardId
+    ? (space?.boards?.find((b) => b.id === activeBoardId) ??
+      space?.boards?.[0] ??
+      null)
+    : (space?.boards?.[0] ?? null);
 
   const boardKey =
-    (space?.boards
-      ?.map(
-        (b) =>
-          b.id +
-          ":" +
-          b.name +
-          ":" +
-          b.cards
-            .map(
-              (c) =>
-                c.id +
-                "|" +
-                (c.favorite ? 1 : 0) +
-                "|" +
-                (c.done ? 1 : 0) +
-                "|" +
-                (c.updatedAt ?? ""),
-            )
-            .join(","),
-      )
-      .join("|") ?? "") +
+    (activeBoard
+      ? activeBoard.id +
+        ":" +
+        activeBoard.name +
+        ":" +
+        activeBoard.cards
+          .map(
+            (c) =>
+              c.id +
+              "|" +
+              (c.favorite ? 1 : 0) +
+              "|" +
+              (c.done ? 1 : 0) +
+              "|" +
+              (c.updatedAt ?? ""),
+          )
+          .join(",")
+      : "") +
     "|" +
     searchTerm;
 
@@ -372,6 +423,7 @@ export const renderBoard = (state, options = {}) => {
 
   boardEl.classList.remove("favorites-view");
   boardEl.classList.remove("board-empty");
+  boardEl.classList.add("board-detail-view");
   boardEl.replaceChildren();
 
   if (!space) {
@@ -405,92 +457,90 @@ export const renderBoard = (state, options = {}) => {
     heading.textContent = "No boards yet";
     const sub = document.createElement("p");
     sub.className = "board-empty-subtitle";
-    sub.textContent = "Add a board to organize your cards.";
+    sub.textContent = 'Click "+" in the sidebar to add a board.';
     emptyState.appendChild(icon);
     emptyState.appendChild(heading);
     emptyState.appendChild(sub);
     boardEl.appendChild(emptyState);
-    appendAddBoardButton(options);
     return;
   }
 
-  space.boards.forEach((board) => {
-    const column = document.createElement("article");
-    column.className = "column";
-    column.dataset.spaceId = space.id;
-    if (options.animateColumns === false) {
-      column.classList.add("column-no-animate");
-    }
-    column.dataset.boardId = board.id;
+  if (!activeBoard) return;
 
-    const header = document.createElement("div");
-    header.className = "column-header";
+  // Render single active board as a detail view
+  const column = document.createElement("article");
+  column.className = "column";
+  column.dataset.spaceId = space.id;
+  if (options.animateColumns === false) {
+    column.classList.add("column-no-animate");
+  }
+  column.dataset.boardId = activeBoard.id;
 
-    const title = document.createElement("div");
-    title.className = "column-title";
-    title.contentEditable = true;
-    title.dataset.boardId = board.id;
-    title.textContent = board.name;
+  const header = document.createElement("div");
+  header.className = "column-header";
 
-    const metaGroup = document.createElement("div");
-    metaGroup.className = "column-meta";
+  const title = document.createElement("div");
+  title.className = "column-title";
+  title.contentEditable = true;
+  title.dataset.boardId = activeBoard.id;
+  title.textContent = activeBoard.name;
 
-    const metaButton = document.createElement("button");
-    metaButton.type = "button";
-    metaButton.className = "column-sites";
-    metaButton.dataset.boardOpen = board.id;
-    metaButton.textContent = formatCount(board.cards.length);
-    metaGroup.appendChild(metaButton);
+  const metaGroup = document.createElement("div");
+  metaGroup.className = "column-meta";
 
-    const deleteBtn = document.createElement("button");
-    deleteBtn.type = "button";
-    deleteBtn.className = "column-delete";
-    deleteBtn.dataset.columnDelete = board.id;
-    deleteBtn.title = "Delete board";
-    deleteBtn.textContent = "×";
-    const headerControls = document.createElement("div");
-    headerControls.className = "column-controls";
-    headerControls.appendChild(metaGroup);
-    headerControls.appendChild(deleteBtn);
+  const metaButton = document.createElement("button");
+  metaButton.type = "button";
+  metaButton.className = "column-sites";
+  metaButton.dataset.boardOpen = activeBoard.id;
+  metaButton.textContent = formatCount(activeBoard.cards.length);
+  metaGroup.appendChild(metaButton);
 
-    header.appendChild(title);
-    header.appendChild(headerControls);
-    column.appendChild(header);
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.className = "column-delete";
+  deleteBtn.dataset.columnDelete = activeBoard.id;
+  deleteBtn.title = "Delete board";
+  deleteBtn.textContent = "×";
+  const headerControls = document.createElement("div");
+  headerControls.className = "column-controls";
+  headerControls.appendChild(metaGroup);
+  headerControls.appendChild(deleteBtn);
 
-    const cardList = document.createElement("div");
-    cardList.className = "card-list";
-    cardList.dataset.boardId = board.id;
-    cardList.dataset.spaceId = space.id;
-    options.attachDropTargets?.(cardList);
+  header.appendChild(title);
+  header.appendChild(headerControls);
+  column.appendChild(header);
 
-    board.cards.forEach((card) => {
-      const cardEl = createCardElement(card, board.id, searchTerm, {
-        animateCards: options.animateCards,
-        spaceId: space.id,
-        onCardDragStart: options.onCardDragStart,
-        onCardDragEnd: options.onCardDragEnd,
-      });
-      cardList.appendChild(cardEl);
+  const cardList = document.createElement("div");
+  cardList.className = "card-list";
+  cardList.dataset.boardId = activeBoard.id;
+  cardList.dataset.spaceId = space.id;
+  options.attachDropTargets?.(cardList);
+
+  activeBoard.cards.forEach((card) => {
+    const cardEl = createCardElement(card, activeBoard.id, searchTerm, {
+      animateCards: options.animateCards,
+      spaceId: space.id,
+      onCardDragStart: options.onCardDragStart,
+      onCardDragEnd: options.onCardDragEnd,
     });
-
-    const dropIndicator = document.createElement("div");
-    dropIndicator.className = "board-drop-indicator";
-    cardList.appendChild(dropIndicator);
-
-    column.appendChild(cardList);
-
-    const addCardBtn = document.createElement("button");
-    addCardBtn.type = "button";
-    addCardBtn.className = "add-card";
-    addCardBtn.dataset.boardId = board.id;
-    addCardBtn.textContent = "+";
-    addCardBtn.setAttribute("aria-label", "Add card");
-    column.appendChild(addCardBtn);
-    options.enableColumnDrag?.(column);
-    boardEl.appendChild(column);
+    cardList.appendChild(cardEl);
   });
 
-  appendAddBoardButton(options);
+  const dropIndicator = document.createElement("div");
+  dropIndicator.className = "board-drop-indicator";
+  cardList.appendChild(dropIndicator);
+
+  column.appendChild(cardList);
+
+  const addCardBtn = document.createElement("button");
+  addCardBtn.type = "button";
+  addCardBtn.className = "add-card";
+  addCardBtn.dataset.boardId = activeBoard.id;
+  addCardBtn.textContent = "+";
+  addCardBtn.setAttribute("aria-label", "Add card");
+  column.appendChild(addCardBtn);
+  options.enableColumnDrag?.(column);
+  boardEl.appendChild(column);
 };
 
 export const getFavoriteGroups = (state, searchTerm) =>
