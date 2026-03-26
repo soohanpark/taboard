@@ -81,6 +81,7 @@ const searchFocusBtn = document.getElementById("search-focus");
 let currentState = null;
 let searchDebounceTimer = null;
 let prevSearchTerm = null;
+let isUnloading = false;
 const getActiveSpace = (state = currentState) =>
   state?.spaces?.find((s) => s.id === state.preferences?.activeSpaceId) ??
   state?.spaces?.[0] ??
@@ -162,6 +163,7 @@ const ensureActiveBoardId = (state) => {
   // Defer the state correction to avoid re-entrant updateState inside
   // handleStateChange, which would cause schedulePersist to save stale state.
   queueMicrotask(() => {
+    if (isUnloading) return;
     const current = getActiveSpace();
     if (!current?.boards?.length) return;
     const currentId = currentState?.preferences?.activeBoardId;
@@ -839,6 +841,7 @@ searchInput.addEventListener("input", (event) => {
 });
 bootstrap();
 window.addEventListener("beforeunload", () => {
+  isUnloading = true;
   cleanupTabs();
   cleanupDriveUI();
   cleanupDrag();
