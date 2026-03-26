@@ -703,7 +703,7 @@ body {
   font-weight: 500;
   color: var(--text-secondary);
   background: rgba(0, 0, 0, 0.05);
-  padding: 2px 8px;
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-full);
   flex-shrink: 0;
   transition: all var(--transition-fast);

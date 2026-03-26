@@ -156,14 +156,12 @@ const handleCardDragEnd = ({ cardEl }) => {
 };
 const ensureActiveBoardId = (state) => {
   const space = getActiveSpace(state);
-  if (!space || !space.boards.length) return;
+  if (!space?.boards?.length) return;
   const activeBoardId = state.preferences.activeBoardId;
-  const exists = space.boards.some((b) => b.id === activeBoardId);
-  if (!exists) {
-    updateState((draft) => {
-      draft.preferences.activeBoardId = space.boards[0]?.id ?? null;
-    });
-  }
+  if (activeBoardId && space.boards.some((b) => b.id === activeBoardId)) return;
+  updateState((draft) => {
+    draft.preferences.activeBoardId = space.boards[0]?.id ?? null;
+  });
 };
 const handleStateChange = (state) => {
   const meta = state.meta ? { ...state.meta } : null;
@@ -685,9 +683,10 @@ boardSidebarListEl?.addEventListener("dragover", (event) => {
     if (item) item.classList.add("tab-drop-target");
   }
 });
-boardSidebarListEl?.addEventListener("dragleave", () => {
+boardSidebarListEl?.addEventListener("dragleave", (event) => {
+  if (boardSidebarListEl.contains(event.relatedTarget)) return;
   boardSidebarListEl
-    ?.querySelectorAll(".sidebar-drop-target, .tab-drop-target")
+    .querySelectorAll(".sidebar-drop-target, .tab-drop-target")
     .forEach((el) =>
       el.classList.remove("sidebar-drop-target", "tab-drop-target"),
     );
@@ -777,9 +776,6 @@ window.addEventListener("keydown", (event) => {
   if (!space?.boards?.length) return;
   // Arrow Up/Down to navigate boards
   if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-    const focusedInSidebar = boardSidebarListEl?.contains(
-      document.activeElement,
-    );
     const isInputFocused =
       document.activeElement?.tagName === "INPUT" ||
       document.activeElement?.tagName === "TEXTAREA" ||
@@ -787,7 +783,8 @@ window.addEventListener("keydown", (event) => {
     if (isInputFocused) return;
     event.preventDefault();
     const activeBoardId = currentState.preferences.activeBoardId;
-    const idx = space.boards.findIndex((b) => b.id === activeBoardId);
+    let idx = space.boards.findIndex((b) => b.id === activeBoardId);
+    if (idx === -1) idx = 0;
     const nextIdx =
       event.key === "ArrowDown"
         ? Math.min(idx + 1, space.boards.length - 1)
@@ -803,12 +800,8 @@ window.addEventListener("keydown", (event) => {
     nextItem?.focus();
     return;
   }
-  // Cmd/Ctrl + number (1-9) to quick-switch boards
-  if (
-    (event.metaKey || event.ctrlKey) &&
-    event.key >= "1" &&
-    event.key <= "9"
-  ) {
+  // Alt + number (1-9) to quick-switch boards
+  if (event.altKey && event.key >= "1" && event.key <= "9") {
     const idx = parseInt(event.key, 10) - 1;
     if (idx < space.boards.length) {
       event.preventDefault();

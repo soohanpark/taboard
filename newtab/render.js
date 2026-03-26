@@ -374,10 +374,6 @@ export const renderBoardSidebar = (state, options = {}) => {
   });
 };
 
-export const appendAddBoardButton = (options = {}) => {
-  // No longer appends inside the board grid; add-column is in the sidebar header now
-};
-
 export const renderBoard = (state, options = {}) => {
   const boardEl = getBoardEl(options);
   if (!boardEl) return;
