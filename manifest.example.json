@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taboard",
-  "description": "Taboard displays your tab list and personal Kanban board on a single screen when you open a new tab.",
-  "version": "0.1.8",
+  "description": "Replace your new tab page with a tab manager and personal kanban board — organize links, notes, and todos across spaces and boards.",
+  "version": "0.1.9",
   "chrome_url_overrides": {
     "newtab": "newtab/index.html"
   },
@@ -17,7 +17,7 @@
     "https://accounts.google.com/*"
   ],
   "oauth2": {
-    "client_id": "<TOKEN>.apps.googleusercontent.com",
+    "client_id": "<YOUR_OAUTH_CLIENT_ID>.apps.googleusercontent.com",
     "scopes": [
       "https://www.googleapis.com/auth/drive.file",
       "https://www.googleapis.com/auth/userinfo.email",
