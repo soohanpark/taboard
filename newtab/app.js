@@ -12,10 +12,12 @@ import {
   SEARCH_DEBOUNCE_MS,
   VIEW_MODES,
   DEFAULT_BOARD_NAME,
+  TAB_DRAG_MIME,
 } from "./constants.js";
 import {
   renderSpaceTabs,
   renderBoard,
+  renderBoardSidebar,
   renderFavoritesBoard,
   resolveCardFavicon,
   invalidateSearchCache,
@@ -38,6 +40,7 @@ import {
 } from "./tabs.js";
 import {
   getHorizontalAfterElement,
+  getVerticalAfterElement,
   attachDropTargets,
   enableColumnDrag,
   moveCardToSpace,
@@ -68,12 +71,17 @@ import {
 const boardEl = document.getElementById("board");
 const spaceTabsEl = document.getElementById("space-tabs");
 const addColumnBtn = document.getElementById("add-column");
+const boardSidebarListEl = document.getElementById("board-sidebar-list");
+const boardSidebarEl = document.getElementById("board-sidebar");
+const sidebarToggleBtn = document.getElementById("sidebar-toggle");
+const sidebarExpandBtn = document.getElementById("sidebar-expand");
 const searchControl = document.getElementById("search-control");
 const searchInput = document.getElementById("search-input");
 const searchFocusBtn = document.getElementById("search-focus");
 let currentState = null;
 let searchDebounceTimer = null;
 let prevSearchTerm = null;
+let isUnloading = false;
 const getActiveSpace = (state = currentState) =>
   state?.spaces?.find((s) => s.id === state.preferences?.activeSpaceId) ??
   state?.spaces?.[0] ??
@@ -147,6 +155,26 @@ const handleCardDragEnd = ({ cardEl }) => {
   document.body.classList.remove("drag-in-progress");
   clearDragCache();
 };
+const ensureActiveBoardId = (state) => {
+  const space = getActiveSpace(state);
+  if (!space?.boards?.length) return;
+  const activeBoardId = state.preferences.activeBoardId;
+  if (activeBoardId && space.boards.some((b) => b.id === activeBoardId)) return;
+  // Defer the state correction to avoid re-entrant updateState inside
+  // handleStateChange, which would cause schedulePersist to save stale state.
+  queueMicrotask(() => {
+    if (isUnloading) return;
+    const current = getActiveSpace();
+    if (!current?.boards?.length) return;
+    const currentId = currentState?.preferences?.activeBoardId;
+    if (currentId && current.boards.some((b) => b.id === currentId)) return;
+    updateState((draft) => {
+      const s = getActiveSpace(draft);
+      if (!s?.boards?.length) return;
+      draft.preferences.activeBoardId = s.boards[0]?.id ?? null;
+    });
+  });
+};
 const handleStateChange = (state) => {
   const meta = state.meta ? { ...state.meta } : null;
   const metaAction = meta?.action ?? null;
@@ -164,11 +192,20 @@ const handleStateChange = (state) => {
   renderSpaceTabs(state, { spaceTabsEl });
   if (state.preferences.viewMode === VIEW_MODES.FAVORITES) {
     renderFavoritesBoard(state, { boardEl });
-    if (addColumnBtn) addColumnBtn.style.display = "none";
+    renderBoardSidebar(state, {
+      sidebarListEl: boardSidebarListEl,
+      sidebarEl: boardSidebarEl,
+      getActiveSpace,
+    });
   } else {
+    ensureActiveBoardId(state);
+    renderBoardSidebar(state, {
+      sidebarListEl: boardSidebarListEl,
+      sidebarEl: boardSidebarEl,
+      getActiveSpace,
+    });
     renderBoard(state, {
       boardEl,
-      addColumnBtn,
       getActiveSpace,
       metaAction,
       attachDropTargets: (cardListEl) =>
@@ -182,7 +219,6 @@ const handleStateChange = (state) => {
       animateCards: metaAction !== "move-card",
       animateColumns: metaAction !== "move-card" && metaAction !== "move-board",
     });
-    if (addColumnBtn) addColumnBtn.style.display = "inline-flex";
   }
   if (searchInput !== document.activeElement)
     searchInput.value = state.preferences.searchTerm ?? "";
@@ -424,6 +460,8 @@ spaceTabsEl.addEventListener("click", (event) => {
     updateState((draft) => {
       draft.preferences.viewMode = VIEW_MODES.SPACES;
       draft.preferences.activeSpaceId = tab.dataset.spaceId;
+      const newSpace = draft.spaces.find((s) => s.id === tab.dataset.spaceId);
+      draft.preferences.activeBoardId = newSpace?.boards?.[0]?.id ?? null;
     });
 });
 spaceTabsEl.addEventListener("contextmenu", (event) => {
@@ -526,10 +564,14 @@ boardEl.addEventListener("click", async (event) => {
     return;
   updateState((draft) => {
     const active = getActiveSpace(draft);
-    if (active)
-      active.boards = active.boards.filter(
-        (board) => board.id !== deleteColumnEl.dataset.columnDelete,
-      );
+    if (!active) return;
+    const deletedId = deleteColumnEl.dataset.columnDelete;
+    const idx = active.boards.findIndex((board) => board.id === deletedId);
+    active.boards = active.boards.filter((board) => board.id !== deletedId);
+    if (draft.preferences.activeBoardId === deletedId) {
+      draft.preferences.activeBoardId =
+        active.boards[idx]?.id ?? active.boards[idx - 1]?.id ?? null;
+    }
   });
   showSnackbar("Board deleted.");
 });
@@ -600,17 +642,141 @@ boardEl.addEventListener("contextmenu", (event) => {
     spaceId: card.dataset.spaceId || null,
   });
 });
+boardSidebarListEl?.addEventListener("click", (event) => {
+  const item = event.target.closest(".board-sidebar-item");
+  if (!item?.dataset.boardId) return;
+  updateState((draft) => {
+    draft.preferences.activeBoardId = item.dataset.boardId;
+  });
+});
+boardSidebarListEl?.addEventListener("contextmenu", (event) => {
+  const item = event.target.closest(".board-sidebar-item");
+  if (!item?.dataset.boardId) return;
+  event.preventDefault();
+  // Select the board on right-click as well
+  updateState((draft) => {
+    draft.preferences.activeBoardId = item.dataset.boardId;
+  });
+});
+let draggingSidebarBoardId = null;
+boardSidebarListEl?.addEventListener("dragstart", (event) => {
+  const item = event.target.closest(".board-sidebar-item");
+  if (!item?.dataset.boardId) return;
+  draggingSidebarBoardId = item.dataset.boardId;
+  item.classList.add("dragging");
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", item.dataset.boardId);
+});
+boardSidebarListEl?.addEventListener("dragover", (event) => {
+  const isTabDrag = Array.from(event.dataTransfer?.types ?? []).includes(
+    TAB_DRAG_MIME,
+  );
+  if (draggingSidebarBoardId) {
+    event.preventDefault();
+    const items = boardSidebarListEl.querySelectorAll(
+      ".board-sidebar-item:not(.dragging)",
+    );
+    items.forEach((el) => el.classList.remove("sidebar-drop-target"));
+    const afterElement = getVerticalAfterElement(
+      boardSidebarListEl,
+      ".board-sidebar-item:not(.dragging)",
+      event.clientY,
+    );
+    if (afterElement) afterElement.classList.add("sidebar-drop-target");
+    return;
+  }
+  if (isTabDrag) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    boardSidebarListEl
+      .querySelectorAll(".tab-drop-target")
+      .forEach((el) => el.classList.remove("tab-drop-target"));
+    const item = event.target.closest(".board-sidebar-item");
+    if (item) item.classList.add("tab-drop-target");
+  }
+});
+boardSidebarListEl?.addEventListener("dragleave", (event) => {
+  if (boardSidebarListEl.contains(event.relatedTarget)) return;
+  boardSidebarListEl
+    .querySelectorAll(".sidebar-drop-target, .tab-drop-target")
+    .forEach((el) =>
+      el.classList.remove("sidebar-drop-target", "tab-drop-target"),
+    );
+});
+boardSidebarListEl?.addEventListener("drop", (event) => {
+  const isTabDrag = Array.from(event.dataTransfer?.types ?? []).includes(
+    TAB_DRAG_MIME,
+  );
+  if (isTabDrag && !draggingSidebarBoardId) {
+    event.preventDefault();
+    boardSidebarListEl
+      .querySelectorAll(".tab-drop-target")
+      .forEach((el) => el.classList.remove("tab-drop-target"));
+    const item = event.target.closest(".board-sidebar-item");
+    if (!item?.dataset.boardId) return;
+    try {
+      const parsed = JSON.parse(event.dataTransfer.getData(TAB_DRAG_MIME));
+      addTabCardToBoard(item.dataset.boardId, parsed);
+    } catch (error) {
+      console.warn("Could not parse tab drop data.", error);
+    }
+    return;
+  }
+  if (!draggingSidebarBoardId) return;
+  event.preventDefault();
+  const afterElement = getVerticalAfterElement(
+    boardSidebarListEl,
+    ".board-sidebar-item:not(.dragging)",
+    event.clientY,
+  );
+  const items = [
+    ...boardSidebarListEl.querySelectorAll(
+      ".board-sidebar-item:not(.dragging)",
+    ),
+  ];
+  moveBoard(
+    draggingSidebarBoardId,
+    afterElement
+      ? items.findIndex(
+          (el) => el.dataset.boardId === afterElement.dataset.boardId,
+        )
+      : items.length,
+  );
+  boardSidebarListEl
+    .querySelectorAll(".dragging, .sidebar-drop-target")
+    .forEach((el) => el.classList.remove("dragging", "sidebar-drop-target"));
+  draggingSidebarBoardId = null;
+});
+boardSidebarListEl?.addEventListener("dragend", () => {
+  draggingSidebarBoardId = null;
+  boardSidebarListEl
+    ?.querySelectorAll(".dragging, .sidebar-drop-target")
+    .forEach((el) => el.classList.remove("dragging", "sidebar-drop-target"));
+});
+const toggleSidebar = () => {
+  const isSmallScreen = window.matchMedia("(max-width: 768px)").matches;
+  if (isSmallScreen) {
+    boardSidebarEl?.classList.toggle("board-sidebar-mobile-open");
+  } else {
+    boardSidebarEl?.classList.toggle("board-sidebar-collapsed");
+  }
+};
+sidebarToggleBtn?.addEventListener("click", toggleSidebar);
+sidebarExpandBtn?.addEventListener("click", toggleSidebar);
 addColumnBtn?.addEventListener("click", () => {
   if (currentState?.preferences.viewMode === VIEW_MODES.FAVORITES)
     return showSnackbar("You can't add boards while in Favorites view.");
+  const newBoardId = generateId("board");
   updateState((draft) => {
     const active = getActiveSpace(draft);
-    if (active)
+    if (active) {
       active.boards.push({
-        id: generateId("board"),
+        id: newBoardId,
         name: "New board",
         cards: [],
       });
+      draft.preferences.activeBoardId = newBoardId;
+    }
   });
   showSnackbar("Board added.");
 });
@@ -620,6 +786,46 @@ window.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
     event.preventDefault();
     focusSearchInput();
+    return;
+  }
+  if (currentState?.preferences.viewMode !== VIEW_MODES.SPACES) return;
+  const space = getActiveSpace();
+  if (!space?.boards?.length) return;
+  // Arrow Up/Down to navigate boards
+  if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+    const isInputFocused =
+      document.activeElement?.tagName === "INPUT" ||
+      document.activeElement?.tagName === "TEXTAREA" ||
+      document.activeElement?.isContentEditable;
+    if (isInputFocused) return;
+    event.preventDefault();
+    const activeBoardId = currentState.preferences.activeBoardId;
+    let idx = space.boards.findIndex((b) => b.id === activeBoardId);
+    if (idx === -1) idx = 0;
+    const nextIdx =
+      event.key === "ArrowDown"
+        ? Math.min(idx + 1, space.boards.length - 1)
+        : Math.max(idx - 1, 0);
+    if (nextIdx !== idx) {
+      updateState((draft) => {
+        draft.preferences.activeBoardId = space.boards[nextIdx].id;
+      });
+    }
+    const nextItem = boardSidebarListEl?.querySelector(
+      `[data-board-id="${space.boards[nextIdx].id}"]`,
+    );
+    nextItem?.focus();
+    return;
+  }
+  // Alt + number (1-9) to quick-switch boards
+  if (event.altKey && event.key >= "1" && event.key <= "9") {
+    const idx = parseInt(event.key, 10) - 1;
+    if (idx < space.boards.length) {
+      event.preventDefault();
+      updateState((draft) => {
+        draft.preferences.activeBoardId = space.boards[idx].id;
+      });
+    }
   }
 });
 searchInput.addEventListener("input", (event) => {
@@ -635,6 +841,7 @@ searchInput.addEventListener("input", (event) => {
 });
 bootstrap();
 window.addEventListener("beforeunload", () => {
+  isUnloading = true;
   cleanupTabs();
   cleanupDriveUI();
   cleanupDrag();
