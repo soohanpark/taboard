@@ -43,6 +43,7 @@ import {
   getVerticalAfterElement,
   attachDropTargets,
   enableColumnDrag,
+  moveCard,
   moveCardToSpace,
   moveBoard,
   moveSpace,
@@ -693,6 +694,16 @@ boardSidebarListEl?.addEventListener("dragover", (event) => {
       .forEach((el) => el.classList.remove("tab-drop-target"));
     const item = event.target.closest(".board-sidebar-item");
     if (item) item.classList.add("tab-drop-target");
+    return;
+  }
+  if (getDraggingCard()) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    boardSidebarListEl
+      .querySelectorAll(".tab-drop-target")
+      .forEach((el) => el.classList.remove("tab-drop-target"));
+    const item = event.target.closest(".board-sidebar-item");
+    if (item) item.classList.add("tab-drop-target");
   }
 });
 boardSidebarListEl?.addEventListener("dragleave", (event) => {
@@ -720,6 +731,26 @@ boardSidebarListEl?.addEventListener("drop", (event) => {
     } catch (error) {
       console.warn("Could not parse tab drop data.", error);
     }
+    return;
+  }
+  const activeDragCard = getDraggingCard();
+  if (activeDragCard && !draggingSidebarBoardId) {
+    event.preventDefault();
+    boardSidebarListEl
+      .querySelectorAll(".tab-drop-target")
+      .forEach((el) => el.classList.remove("tab-drop-target"));
+    const item = event.target.closest(".board-sidebar-item");
+    if (!item?.dataset.boardId) return;
+    moveCard(
+      activeDragCard.cardId,
+      activeDragCard.boardId,
+      item.dataset.boardId,
+      0,
+      activeDragCard.spaceId,
+      getActiveSpace()?.id ?? null,
+    );
+    setSuppressCardClick(true);
+    setTimeout(() => setSuppressCardClick(false), 0);
     return;
   }
   if (!draggingSidebarBoardId) return;
