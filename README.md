@@ -10,7 +10,7 @@ When you open a new tab in Chrome, this extension shows your tab list and a pers
 
 - **Tab drawer**: view/search the current window tabs, click to switch or close. Drag tabs to the board to save them as link cards.
 - **Spaces / boards / cards**: Space -> Board (column) -> Card structure. Supports card types (link/note/todo), tags, favorites, done state, and drag-and-drop reordering.
-- **Sidebar navigation**: quickly switch between spaces and boards from the kanban sidebar.
+- **Sidebar navigation**: quickly switch between spaces and boards from the kanban sidebar. Drag cards or tabs onto a sidebar board to move or save them.
 - **Favorites view**: the top star tab shows only favorited cards across all spaces.
 - **Open all**: each board's `x sites` button opens its link cards at once in a new tab group.
 - **Quick search / shortcuts**: filter cards with the top search box, focus it with `Cmd/Ctrl + K`, close modals with `Esc`.
