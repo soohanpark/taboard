@@ -25,7 +25,7 @@
 ### Core Features
 - Tab drawer (sidebar): view/search/drag tabs to board
 - Spaces/Boards/Cards hierarchy with link/note/todo card types
-- Kanban board sidebar navigation for quick space/board switching
+- Kanban board sidebar navigation for quick space/board switching; drag cards or tabs onto sidebar boards to move/save them
 - Favorites view, bulk open, keyboard shortcuts
 - Google Drive sync (optional, auto every 30 min)
 
@@ -65,7 +65,7 @@ taboard/
 
 | File | Responsibility |
 |------|---------------|
-| `app.js` | Top-level orchestration: wires events, initializes modules, keyboard shortcuts |
+| `app.js` | Top-level orchestration: wires events, initializes modules, keyboard shortcuts, sidebar drop targets (tabs & cards) |
 | `state.js` | Pure immutable state helpers (CRUD for spaces/boards/cards, preferences) |
 | `storage.js` | chrome.storage.local read/write wrapper |
 | `drive.js` | Google Drive OAuth flow, push/pull sync, token refresh |

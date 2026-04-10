@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Taboard",
   "description": "Replace your new tab page with a tab manager and personal kanban board — organize links, notes, and todos across spaces and boards.",
-  "version": "0.1.9",
+  "version": "0.2.1",
   "chrome_url_overrides": {
     "newtab": "newtab/index.html"
   },
