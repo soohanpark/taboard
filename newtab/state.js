@@ -76,20 +76,27 @@ export const getRandomAccent = () => {
 export const createDefaultState = () => {
   const focusSpaceId = generateId("space");
   const personalSpaceId = generateId("space");
+  const now = new Date().toISOString();
   const createDefaultBoards = () => [
     {
       id: generateId("board"),
       name: "Today's tasks",
+      createdAt: now,
+      updatedAt: now,
       cards: sampleCards(),
     },
     {
       id: generateId("board"),
       name: "Links & resources",
+      createdAt: now,
+      updatedAt: now,
       cards: [],
     },
     {
       id: generateId("board"),
       name: "Ideas",
+      createdAt: now,
+      updatedAt: now,
       cards: [],
     },
   ];
@@ -103,12 +110,16 @@ export const createDefaultState = () => {
         id: focusSpaceId,
         name: "Focus",
         accent: getRandomAccent(),
+        createdAt: now,
+        updatedAt: now,
         boards: focusBoards,
       },
       {
         id: personalSpaceId,
         name: "Personal",
         accent: getRandomAccent(),
+        createdAt: now,
+        updatedAt: now,
         boards: personalBoards,
       },
     ],
@@ -193,12 +204,16 @@ const normalizeState = (state) => {
         id: space.id ?? generateId("space"),
         name: space.name ?? "Untitled",
         accent: space.accent ?? getRandomAccent(),
+        createdAt: space.createdAt ?? new Date().toISOString(),
+        updatedAt: space.updatedAt ?? new Date().toISOString(),
         boards: Array.isArray(space.boards)
           ? space.boards
               .filter((board) => board && typeof board === "object")
               .map((board) => ({
                 id: board.id ?? generateId("board"),
                 name: board.name ?? "New board",
+                createdAt: board.createdAt ?? new Date().toISOString(),
+                updatedAt: board.updatedAt ?? new Date().toISOString(),
                 cards: Array.isArray(board.cards)
                   ? board.cards
                       .filter((card) => card && typeof card === "object")
