@@ -1,4 +1,5 @@
 import { FALLBACK_FAVICON, VIEW_MODES } from "./constants.js";
+import { countMatchesAcrossSpaces } from "./state.js";
 
 const getBoardEl = (options = {}) =>
   options.boardEl ?? document.getElementById("board");
@@ -72,11 +73,25 @@ export const cardMatchesSearch = (card, searchTerm) => {
   if (!searchTerm) return true;
   const key = `${searchTerm}:${card.id}`;
   if (searchMemoCache.has(key)) return searchMemoCache.get(key);
-  const haystack = [card.title, card.note, card.url, card.tags?.join(" ") ?? ""]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  const result = haystack.includes(searchTerm.toLowerCase());
+  const term = searchTerm.trim();
+  let result;
+  if (term.startsWith("#")) {
+    const tag = term.slice(1).trim().toLowerCase();
+    result = tag
+      ? (card.tags ?? []).some((t) => t.toLowerCase().includes(tag))
+      : true;
+  } else {
+    const haystack = [
+      card.title,
+      card.note,
+      card.url,
+      card.tags?.join(" ") ?? "",
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    result = haystack.includes(term.toLowerCase());
+  }
   searchMemoCache.set(key, result);
   return result;
 };
@@ -149,6 +164,7 @@ export const createCardElement = (card, boardId, searchTerm, options = {}) => {
   cardEl.draggable = !readOnly;
   if (readOnly) {
     cardEl.classList.add("card-readonly");
+    cardEl.dataset.readOnly = "true";
   }
   if (card.done) {
     cardEl.classList.add("is-done");
@@ -167,55 +183,15 @@ export const createCardElement = (card, boardId, searchTerm, options = {}) => {
   const floating = document.createElement("div");
   floating.className = "card-floating-actions";
 
-  if (card.type === "todo") {
-    const doneButton = document.createElement("button");
-    doneButton.type = "button";
-    doneButton.className = "card-floating-button card-done-button";
-    doneButton.dataset.cardAction = "toggle-done";
-    doneButton.title = card.done ? "Mark incomplete" : "Mark complete";
-    doneButton.setAttribute(
-      "aria-label",
-      card.done ? "Mark incomplete" : "Mark complete",
-    );
-    doneButton.textContent = card.done ? "✔" : "☐";
-    if (card.done) {
-      doneButton.classList.add("is-done");
-    }
-    floating.appendChild(doneButton);
-  }
-
-  const editIcon = document.createElement("button");
-  editIcon.type = "button";
-  editIcon.className = "card-floating-button";
-  editIcon.dataset.cardAction = "edit";
-  editIcon.title = "Edit";
-  editIcon.textContent = "✎";
-  editIcon.setAttribute("aria-label", "Edit card");
-  floating.appendChild(editIcon);
-
-  const favoriteIcon = document.createElement("button");
-  favoriteIcon.type = "button";
-  favoriteIcon.className = "card-floating-button card-favorite-button";
-  favoriteIcon.dataset.cardAction = "favorite";
-  favoriteIcon.title = card.favorite ? "Unfavorite" : "Favorite";
-  favoriteIcon.textContent = card.favorite ? "★" : "☆";
-  favoriteIcon.setAttribute(
-    "aria-label",
-    card.favorite ? "Unfavorite" : "Favorite",
-  );
-  if (card.favorite) {
-    favoriteIcon.classList.add("is-active");
-  }
-  floating.appendChild(favoriteIcon);
-
-  const deleteIcon = document.createElement("button");
-  deleteIcon.type = "button";
-  deleteIcon.className = "card-floating-button";
-  deleteIcon.dataset.cardAction = "delete";
-  deleteIcon.title = "Delete";
-  deleteIcon.textContent = "×";
-  deleteIcon.setAttribute("aria-label", "Delete card");
-  floating.appendChild(deleteIcon);
+  const moreIcon = document.createElement("button");
+  moreIcon.type = "button";
+  moreIcon.className = "card-floating-button card-menu-button";
+  moreIcon.dataset.cardAction = "menu";
+  moreIcon.title = "More actions";
+  moreIcon.textContent = "⋯";
+  moreIcon.setAttribute("aria-label", "More actions");
+  moreIcon.setAttribute("aria-haspopup", "menu");
+  floating.appendChild(moreIcon);
 
   cardEl.appendChild(floating);
 
@@ -229,6 +205,43 @@ export const createCardElement = (card, boardId, searchTerm, options = {}) => {
   const titleRow = document.createElement("div");
   titleRow.className = "card-title-row";
 
+  const leading = document.createElement("div");
+  leading.className = "card-leading";
+
+  if (card.type === "todo") {
+    const doneButton = document.createElement("button");
+    doneButton.type = "button";
+    doneButton.className = "card-leading-button card-done-button";
+    doneButton.dataset.cardAction = "toggle-done";
+    doneButton.title = card.done ? "Mark incomplete" : "Mark complete";
+    doneButton.setAttribute(
+      "aria-label",
+      card.done ? "Mark incomplete" : "Mark complete",
+    );
+    doneButton.textContent = card.done ? "✔" : "☐";
+    if (card.done) {
+      doneButton.classList.add("is-done");
+    }
+    leading.appendChild(doneButton);
+  }
+
+  if (!options.hideFavoriteButton) {
+    const favoriteIcon = document.createElement("button");
+    favoriteIcon.type = "button";
+    favoriteIcon.className = "card-leading-button card-favorite-button";
+    favoriteIcon.dataset.cardAction = "favorite";
+    favoriteIcon.title = card.favorite ? "Unfavorite" : "Favorite";
+    favoriteIcon.textContent = card.favorite ? "★" : "☆";
+    favoriteIcon.setAttribute(
+      "aria-label",
+      card.favorite ? "Unfavorite" : "Favorite",
+    );
+    if (card.favorite) {
+      favoriteIcon.classList.add("is-active");
+    }
+    leading.appendChild(favoriteIcon);
+  }
+
   if (card.type === "link") {
     const favicon = document.createElement("img");
     favicon.className = "card-favicon";
@@ -238,19 +251,24 @@ export const createCardElement = (card, boardId, searchTerm, options = {}) => {
       favicon.src = FALLBACK_FAVICON;
       favicon.onerror = null;
     };
-    titleRow.appendChild(favicon);
+    leading.appendChild(favicon);
   }
 
-  const typeIconMap = {
-    link: "\uD83D\uDD17",
-    note: "\uD83D\uDCDD",
-    todo: "\u2713",
-  };
-  const typeIcon = document.createElement("span");
-  typeIcon.className = "card-type-icon";
-  typeIcon.textContent = typeIconMap[card.type] ?? "";
-  typeIcon.setAttribute("aria-hidden", "true");
-  titleRow.appendChild(typeIcon);
+  if (card.type !== "link") {
+    const typeIconMap = {
+      note: "\uD83D\uDCDD",
+      todo: "\u2713",
+    };
+    const glyph = typeIconMap[card.type];
+    if (glyph) {
+      const typeIcon = document.createElement("span");
+      typeIcon.className = "card-type-icon";
+      typeIcon.textContent = glyph;
+      typeIcon.setAttribute("aria-hidden", "true");
+      leading.appendChild(typeIcon);
+    }
+  }
+  if (leading.childNodes.length) titleRow.appendChild(leading);
 
   const title = document.createElement("p");
   title.className = "card-title";
@@ -280,6 +298,9 @@ export const createCardElement = (card, boardId, searchTerm, options = {}) => {
       const tagEl = document.createElement("span");
       tagEl.className = "card-tag";
       tagEl.textContent = `#${tag}`;
+      tagEl.dataset.tag = tag;
+      tagEl.setAttribute("role", "button");
+      tagEl.tabIndex = 0;
       tagsEl.appendChild(tagEl);
     });
     cardEl.appendChild(tagsEl);
@@ -322,6 +343,7 @@ export const renderBoardSidebar = (state, options = {}) => {
   const space = options.getActiveSpace?.(state) ?? null;
   const activeBoardId = state.preferences.activeBoardId ?? null;
   const isFavorites = state.preferences.viewMode === VIEW_MODES.FAVORITES;
+  const searchTerm = (state.preferences.searchTerm ?? "").trim();
 
   if (isFavorites) {
     sidebarEl.classList.add("board-sidebar-hidden");
@@ -329,12 +351,30 @@ export const renderBoardSidebar = (state, options = {}) => {
   }
   sidebarEl.classList.remove("board-sidebar-hidden");
 
+  const matchCounts = searchTerm
+    ? countMatchesAcrossSpaces(state, searchTerm)
+    : null;
+
   const sidebarKey =
     (space?.boards
-      ?.map((b) => b.id + ":" + b.name + ":" + b.cards.length)
+      ?.map((b) => {
+        const todos = (b.cards ?? []).filter((c) => c.type === "todo");
+        const todoDone = todos.filter((c) => c.done).length;
+        const matchInfo = matchCounts?.perBoard?.[b.id];
+        return [
+          b.id,
+          b.name,
+          (b.cards ?? []).length,
+          todos.length,
+          todoDone,
+          matchInfo ? `${matchInfo.match}/${matchInfo.total}` : "",
+        ].join(":");
+      })
       .join("|") ?? "") +
     "|" +
-    activeBoardId;
+    activeBoardId +
+    "|" +
+    searchTerm;
   if (sidebarKey === lastSidebarKey) return;
   lastSidebarKey = sidebarKey;
 
@@ -363,7 +403,28 @@ export const renderBoardSidebar = (state, options = {}) => {
 
     const count = document.createElement("span");
     count.className = "board-sidebar-item-count";
-    count.textContent = board.cards.length;
+
+    if (searchTerm && matchCounts) {
+      const info = matchCounts.perBoard[board.id] ?? {
+        match: 0,
+        total: board.cards.length,
+      };
+      count.textContent = `${info.match}/${info.total}`;
+      if (info.match === 0) li.classList.add("is-dimmed");
+    } else {
+      const todos = (board.cards ?? []).filter((c) => c.type === "todo");
+      if (todos.length) {
+        const done = todos.filter((c) => c.done).length;
+        if (done === todos.length) {
+          count.textContent = "✓";
+          count.classList.add("is-all-done");
+        } else {
+          count.textContent = `${done} / ${todos.length}`;
+        }
+      } else {
+        count.textContent = String(board.cards.length);
+      }
+    }
 
     li.appendChild(name);
     li.appendChild(count);
@@ -438,9 +499,15 @@ export const renderBoard = (state, options = {}) => {
     const sub = document.createElement("p");
     sub.className = "board-empty-subtitle";
     sub.textContent = "Create a space to get started.";
+    const cta = document.createElement("button");
+    cta.type = "button";
+    cta.className = "board-empty-cta";
+    cta.dataset.emptyAction = "create-space";
+    cta.textContent = "+ Create your first space";
     emptyState.appendChild(icon);
     emptyState.appendChild(heading);
     emptyState.appendChild(sub);
+    emptyState.appendChild(cta);
     boardEl.appendChild(emptyState);
     return;
   }
@@ -457,10 +524,24 @@ export const renderBoard = (state, options = {}) => {
     heading.textContent = "No boards yet";
     const sub = document.createElement("p");
     sub.className = "board-empty-subtitle";
-    sub.textContent = 'Click "+" in the sidebar to add a board.';
+    sub.textContent = 'Click "+" in the sidebar or use the button below.';
+    const cta = document.createElement("button");
+    cta.type = "button";
+    cta.className = "board-empty-cta";
+    cta.dataset.emptyAction = "create-board";
+    cta.textContent = "+ Create board";
     emptyState.appendChild(icon);
     emptyState.appendChild(heading);
     emptyState.appendChild(sub);
+    emptyState.appendChild(cta);
+    if (options.allowSampleTemplate) {
+      const sampleLink = document.createElement("button");
+      sampleLink.type = "button";
+      sampleLink.className = "board-empty-secondary";
+      sampleLink.dataset.emptyAction = "use-sample";
+      sampleLink.textContent = "Or use sample template";
+      emptyState.appendChild(sampleLink);
+    }
     boardEl.appendChild(emptyState);
     return;
   }
@@ -488,11 +569,25 @@ export const renderBoard = (state, options = {}) => {
   const metaGroup = document.createElement("div");
   metaGroup.className = "column-meta";
 
+  const linkCount = activeBoard.cards.filter(
+    (card) => card.type === "link" && card.url,
+  ).length;
   const metaButton = document.createElement("button");
   metaButton.type = "button";
   metaButton.className = "column-sites";
   metaButton.dataset.boardOpen = activeBoard.id;
-  metaButton.textContent = formatCount(activeBoard.cards.length);
+  if (linkCount === 0) {
+    metaButton.disabled = true;
+    metaButton.title = "No links to open";
+  }
+  const metaLabel = document.createElement("span");
+  metaLabel.className = "column-sites-label";
+  metaLabel.textContent = "Open all";
+  const metaBadge = document.createElement("span");
+  metaBadge.className = "column-sites-badge";
+  metaBadge.textContent = String(linkCount);
+  metaButton.appendChild(metaLabel);
+  metaButton.appendChild(metaBadge);
   metaGroup.appendChild(metaButton);
 
   const deleteBtn = document.createElement("button");
@@ -509,6 +604,30 @@ export const renderBoard = (state, options = {}) => {
   header.appendChild(title);
   header.appendChild(headerControls);
   column.appendChild(header);
+
+  if (searchTerm) {
+    const matches = countMatchesAcrossSpaces(state, searchTerm);
+    const localMatch = matches.perBoard[activeBoard.id]?.match ?? 0;
+    const elsewhere = matches.total - localMatch;
+    if (localMatch === 0 && elsewhere > 0) {
+      let bestBoard = null;
+      let bestMatch = 0;
+      Object.entries(matches.perBoard).forEach(([id, info]) => {
+        if (id !== activeBoard.id && info.match > bestMatch) {
+          bestMatch = info.match;
+          bestBoard = { id, info };
+        }
+      });
+      const banner = document.createElement("div");
+      banner.className = "board-search-banner";
+      banner.dataset.jumpBoardId = bestBoard?.id ?? "";
+      banner.dataset.jumpSpaceId = bestBoard?.info?.spaceId ?? "";
+      banner.tabIndex = 0;
+      banner.setAttribute("role", "button");
+      banner.textContent = `이 보드에는 결과가 없어요 — 다른 보드에서 ${elsewhere}개 발견`;
+      column.appendChild(banner);
+    }
+  }
 
   const cardList = document.createElement("div");
   cardList.className = "card-list";
@@ -532,13 +651,34 @@ export const renderBoard = (state, options = {}) => {
 
   column.appendChild(cardList);
 
+  const addCardWrapper = document.createElement("div");
+  addCardWrapper.className = "add-card-wrapper";
+
   const addCardBtn = document.createElement("button");
   addCardBtn.type = "button";
   addCardBtn.className = "add-card";
   addCardBtn.dataset.boardId = activeBoard.id;
-  addCardBtn.textContent = "+";
   addCardBtn.setAttribute("aria-label", "Add card");
-  column.appendChild(addCardBtn);
+  const addLabel = document.createElement("span");
+  addLabel.className = "add-card-label";
+  addLabel.textContent = "+ Add card";
+  addCardBtn.appendChild(addLabel);
+  addCardWrapper.appendChild(addCardBtn);
+
+  const chips = document.createElement("div");
+  chips.className = "add-card-chips";
+  ["link", "note", "todo"].forEach((type) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = `add-card-chip add-card-chip-${type}`;
+    chip.dataset.addCardType = type;
+    chip.dataset.boardId = activeBoard.id;
+    chip.textContent = type[0].toUpperCase() + type.slice(1);
+    chips.appendChild(chip);
+  });
+  addCardWrapper.appendChild(chips);
+
+  column.appendChild(addCardWrapper);
   options.enableColumnDrag?.(column);
   boardEl.appendChild(column);
 };

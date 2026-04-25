@@ -117,9 +117,18 @@ export const createDefaultState = () => {
       searchTerm: "",
       captureBoardId: focusBoards[0].id,
       viewMode: "spaces",
+      tabDrawerPinned: false,
+      lastSyncAt: null,
     },
     lastUpdated: new Date().toISOString(),
   };
+};
+
+const PREFERENCE_DEFAULTS = {
+  searchTerm: "",
+  viewMode: "spaces",
+  tabDrawerPinned: false,
+  lastSyncAt: null,
 };
 
 let appState = createDefaultState();
@@ -158,6 +167,13 @@ const normalizeState = (state) => {
   }
   next.preferences.searchTerm = next.preferences.searchTerm ?? "";
   next.preferences.activeBoardId = next.preferences.activeBoardId ?? null;
+  next.preferences.tabDrawerPinned = Boolean(
+    next.preferences.tabDrawerPinned ?? PREFERENCE_DEFAULTS.tabDrawerPinned,
+  );
+  next.preferences.lastSyncAt =
+    typeof next.preferences.lastSyncAt === "number"
+      ? next.preferences.lastSyncAt
+      : null;
   if (next.preferences.viewMode !== "favorites") {
     next.preferences.viewMode = "spaces";
   }
@@ -282,4 +298,95 @@ export const updateState = (mutator, meta = {}) => {
   appState = draft;
   notify();
   delete appState.meta;
+};
+
+export const softDeleteCard = (state, cardId) => {
+  const snapshot = clone(state);
+  const next = clone(state);
+  let removed = false;
+  for (const space of next.spaces ?? []) {
+    for (const board of space.boards ?? []) {
+      const idx = (board.cards ?? []).findIndex((card) => card.id === cardId);
+      if (idx !== -1) {
+        board.cards.splice(idx, 1);
+        removed = true;
+        break;
+      }
+    }
+    if (removed) break;
+  }
+  return { nextState: next, snapshot, removed };
+};
+
+export const softDeleteBoard = (state, boardId) => {
+  const snapshot = clone(state);
+  const next = clone(state);
+  let removed = false;
+  for (const space of next.spaces ?? []) {
+    const idx = (space.boards ?? []).findIndex((board) => board.id === boardId);
+    if (idx !== -1) {
+      space.boards.splice(idx, 1);
+      removed = true;
+      if (next.preferences?.activeBoardId === boardId) {
+        next.preferences.activeBoardId =
+          space.boards[idx]?.id ?? space.boards[idx - 1]?.id ?? null;
+      }
+      break;
+    }
+  }
+  return { nextState: next, snapshot, removed };
+};
+
+export const softDeleteSpace = (state, spaceId) => {
+  const snapshot = clone(state);
+  const next = clone(state);
+  const idx = (next.spaces ?? []).findIndex((space) => space.id === spaceId);
+  let removed = false;
+  if (idx !== -1) {
+    next.spaces.splice(idx, 1);
+    removed = true;
+    if (next.preferences?.activeSpaceId === spaceId) {
+      next.preferences.activeSpaceId = next.spaces[0]?.id ?? null;
+      next.preferences.activeBoardId = next.spaces[0]?.boards?.[0]?.id ?? null;
+    }
+  }
+  return { nextState: next, snapshot, removed };
+};
+
+const matchCardForCount = (card, term) => {
+  if (!term) return true;
+  if (term.startsWith("#")) {
+    const tag = term.slice(1).trim().toLowerCase();
+    if (!tag) return true;
+    return (card.tags ?? []).some((t) => t.toLowerCase().includes(tag));
+  }
+  const haystack = [card.title, card.note, card.url, card.tags?.join(" ") ?? ""]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(term.toLowerCase());
+};
+
+export const countMatchesAcrossSpaces = (state, term) => {
+  const trimmed = (term ?? "").trim();
+  const result = { perBoard: {}, perSpace: {}, total: 0 };
+  if (!state?.spaces?.length) return result;
+  for (const space of state.spaces) {
+    let spaceTotal = 0;
+    for (const board of space.boards ?? []) {
+      const matches = (board.cards ?? []).filter((card) =>
+        matchCardForCount(card, trimmed),
+      ).length;
+      result.perBoard[board.id] = {
+        match: matches,
+        total: (board.cards ?? []).length,
+        spaceId: space.id,
+        boardName: board.name,
+      };
+      spaceTotal += matches;
+    }
+    result.perSpace[space.id] = spaceTotal;
+    result.total += spaceTotal;
+  }
+  return result;
 };

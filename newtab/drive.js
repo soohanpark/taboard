@@ -415,9 +415,7 @@ export const pullFromDrive = async (options = {}) => {
       await persistMeta();
     }
     if (!data || typeof data !== "object" || !Array.isArray(data.spaces)) {
-      throw createDriveError(
-        "Invalid data format received from Drive.",
-      );
+      throw createDriveError("Invalid data format received from Drive.");
     }
     driveState.syncing = false;
     driveState.lastError = null;

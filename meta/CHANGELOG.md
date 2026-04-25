@@ -12,13 +12,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 - Drag cards onto sidebar boards to move them between boards quickly
+- UX overhaul (2026-04): tab drawer pin (T), 5s undo for deletes, single-key shortcuts (N/B/[/]/F/?), search match counts in sidebar, tag-click filter, "Add card" inline type chips, Drive menu click popover with last sync time
+
+### 변경됨 — "kanban" 명칭을 "boards"로 통일
 
 ---
 
 ## [0.1.8]
 
 ### Added
-- Kanban board sidebar navigation for quick space/board switching
+- Boards sidebar navigation for quick space/board switching
 - Sidebar UX improvements (collapse/expand, active board highlight)
 
 ### Fixed
@@ -84,7 +87,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Highlights |
 |---------|-----------|
-| 0.1.8 | Kanban sidebar navigation, Drive sync fixes |
+| 0.1.8 | Boards sidebar navigation, Drive sync fixes |
 | 0.1.7 | Major refactor, a11y, loading states, performance optimization |
 | 0.1.5 | Design tokens, dark mode, animations |
 | 0.1.4 | Drive sync fixes |

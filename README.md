@@ -4,13 +4,13 @@
 ![banner](icons/banner.png)
 
 
-When you open a new tab in Chrome, this extension shows your tab list and a personal kanban board side by side. The left drawer lets you see and manage tabs in the current window, and the right side organizes links, notes, and todos as cards on boards by space. A sidebar provides quick navigation between spaces and boards. Data is saved in the browser with optional backup/restore via Google Drive.
+When you open a new tab in Chrome, this extension shows your tab list and personal boards side by side. The left drawer lets you see and manage tabs in the current window, and the right side organizes links, notes, and todos as cards on boards by space. A sidebar provides quick navigation between spaces and boards. Data is saved in the browser with optional backup/restore via Google Drive.
 
 ## What can you do?
 
 - **Tab drawer**: view/search the current window tabs, click to switch or close. Drag tabs to the board to save them as link cards.
 - **Spaces / boards / cards**: Space -> Board (column) -> Card structure. Supports card types (link/note/todo), tags, favorites, done state, and drag-and-drop reordering.
-- **Sidebar navigation**: quickly switch between spaces and boards from the kanban sidebar. Drag cards or tabs onto a sidebar board to move or save them.
+- **Sidebar navigation**: quickly switch between spaces and boards from the boards sidebar. Drag cards or tabs onto a sidebar board to move or save them.
 - **Favorites view**: the top star tab shows only favorited cards across all spaces.
 - **Open all**: each board's `x sites` button opens its link cards at once in a new tab group.
 - **Quick search / shortcuts**: filter cards with the top search box, focus it with `Cmd/Ctrl + K`, close modals with `Esc`.

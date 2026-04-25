@@ -16,3 +16,4 @@ export const FALLBACK_FAVICON =
 export const DEFAULT_BOARD_NAME = "Untitled board";
 export const DEFAULT_SPACE_NAME = "Untitled";
 export const SNACKBAR_DURATION_MS = 3000;
+export const SNACKBAR_UNDO_DURATION_MS = 5500;

@@ -15,13 +15,13 @@
 
 Replace Chrome's new tab page with a productivity tool combining:
 - Tab management (left drawer)
-- Personal kanban board (main area)
+- Personal boards (main area)
 
 ## Target Users
 
 - Users who manage many browser tabs
 - Users who want quick access to saved links/notes/todos
-- Users who prefer visual organization (kanban style)
+- Users who prefer visual organization (board style)
 
 ## Technical Stack
 
