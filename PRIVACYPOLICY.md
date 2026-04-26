@@ -2,7 +2,7 @@
 
 **Last Updated: 2025-11-21**
 
-Taboard is a Chrome extension that replaces the new tab page with a tab drawer and personal kanban-style boards. It is designed to run primarily on your device, with optional backup to your own Google Drive.
+Taboard is a Chrome extension that replaces the new tab page with a tab drawer and personal board-style boards. It is designed to run primarily on your device, with optional backup to your own Google Drive.
 
 ## Data Collection and Use
 

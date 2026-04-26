@@ -1,4 +1,4 @@
-import { getState, replaceState } from "./state.js";
+import { getState, replaceState, updateState } from "./state.js";
 import { saveStateToStorage } from "./storage.js";
 import {
   connectDrive,
@@ -17,6 +17,8 @@ import {
 
 const driveControl = document.getElementById("drive-control");
 const driveConnectBtn = document.getElementById("drive-connect");
+const driveMenuEl = document.getElementById("drive-menu");
+const driveMenuStatusEl = document.getElementById("drive-menu-status");
 const driveMenuSyncBtn = document.getElementById("drive-menu-sync");
 const driveMenuDisconnectBtn = document.getElementById("drive-menu-disconnect");
 
@@ -28,6 +30,64 @@ let syncInFlight = false;
 let isDriveSyncSuppressed = false;
 let hasPulledDriveState = false;
 let initialized = false;
+let driveMenuOpen = false;
+
+const formatRelativeTime = (timestamp) => {
+  if (!timestamp) return "Not synced yet";
+  const diff = Date.now() - timestamp;
+  if (diff < 30 * 1000) return "Last synced just now";
+  if (diff < 60 * 60 * 1000) {
+    const minutes = Math.floor(diff / (60 * 1000));
+    return `Last synced ${minutes} min${minutes === 1 ? "" : "s"} ago`;
+  }
+  if (diff < 24 * 60 * 60 * 1000) {
+    const hours = Math.floor(diff / (60 * 60 * 1000));
+    return `Last synced ${hours} hour${hours === 1 ? "" : "s"} ago`;
+  }
+  const days = Math.floor(diff / (24 * 60 * 60 * 1000));
+  return `Last synced ${days} day${days === 1 ? "" : "s"} ago`;
+};
+
+const setDriveStatusText = (text) => {
+  if (!driveMenuStatusEl) return;
+  driveMenuStatusEl.textContent = text;
+};
+
+const refreshDriveStatusFromState = () => {
+  const state = getState();
+  const lastSyncAt = state?.preferences?.lastSyncAt ?? null;
+  setDriveStatusText(formatRelativeTime(lastSyncAt));
+};
+
+const recordSyncTimestamp = () => {
+  updateState((draft) => {
+    if (!draft.preferences) draft.preferences = {};
+    draft.preferences.lastSyncAt = Date.now();
+  });
+  refreshDriveStatusFromState();
+};
+
+export const closeDriveMenu = () => {
+  if (!driveMenuOpen) return;
+  driveMenuOpen = false;
+  driveMenuEl?.setAttribute("data-open", "false");
+  driveMenuEl?.setAttribute("aria-hidden", "true");
+  driveConnectBtn?.setAttribute("aria-expanded", "false");
+};
+
+const openDriveMenu = () => {
+  if (driveMenuOpen) return;
+  driveMenuOpen = true;
+  driveMenuEl?.setAttribute("data-open", "true");
+  driveMenuEl?.setAttribute("aria-hidden", "false");
+  driveConnectBtn?.setAttribute("aria-expanded", "true");
+  refreshDriveStatusFromState();
+};
+
+const toggleDriveMenu = () => {
+  if (driveMenuOpen) closeDriveMenu();
+  else openDriveMenu();
+};
 
 let driveCallbacks = {
   findCardContext: () => ({ card: null }),
@@ -302,9 +362,11 @@ export const initDriveUI = (callbacks = {}) => {
   if (initialized) return;
   initialized = true;
 
-  driveConnectBtn?.addEventListener("click", async () => {
+  driveConnectBtn?.addEventListener("click", async (event) => {
     const snapshot = getDriveSnapshot();
     if (snapshot.status === "connected") {
+      event.stopPropagation();
+      toggleDriveMenu();
       return;
     }
     try {
@@ -320,8 +382,21 @@ export const initDriveUI = (callbacks = {}) => {
       }
       showSnackbar("Connected to Google Drive.");
       scheduleDriveSync(getState(), { immediate: true });
+      recordSyncTimestamp();
     } catch (error) {
       showSnackbar("Failed to connect to Drive: " + error.message);
+    }
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!driveMenuOpen) return;
+    if (driveControl?.contains(event.target)) return;
+    closeDriveMenu();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && driveMenuOpen) {
+      closeDriveMenu();
     }
   });
 
@@ -333,12 +408,15 @@ export const initDriveUI = (callbacks = {}) => {
     driveMenuSyncBtn.disabled = true;
     const originalText = driveMenuSyncBtn.textContent;
     driveMenuSyncBtn.textContent = "Syncing...";
+    setDriveStatusText("Syncing…");
     showSnackbar("Manually syncing with Google Drive...");
     try {
       await runDriveSync({ reason: "manual" });
       showSnackbar("Manual sync with Drive completed.");
+      recordSyncTimestamp();
     } catch (error) {
       showSnackbar("Drive sync failed: " + error.message);
+      setDriveStatusText("Sync failed — try again");
     } finally {
       driveMenuSyncBtn.disabled = false;
       driveMenuSyncBtn.textContent = originalText;
@@ -350,6 +428,9 @@ export const initDriveUI = (callbacks = {}) => {
     await disconnectDrive();
     stopDriveBackgroundSync();
     hasPulledDriveState = false;
+    closeDriveMenu();
     showSnackbar("Disconnected from Google Drive.");
   });
+
+  refreshDriveStatusFromState();
 };

@@ -2,14 +2,22 @@ import {
   createDefaultState,
   generateId,
   initState,
+  replaceState,
   getRandomAccent,
   subscribe,
   updateState,
+  softDeleteCard,
+  softDeleteBoard,
+  softDeleteSpace,
+  restoreDeletedCard,
+  restoreDeletedBoard,
+  restoreDeletedSpace,
 } from "./state.js";
 import { loadStateFromStorage } from "./storage.js";
 import { initDrive, subscribeDrive } from "./drive.js";
 import {
   SEARCH_DEBOUNCE_MS,
+  SNACKBAR_UNDO_DURATION_MS,
   VIEW_MODES,
   DEFAULT_BOARD_NAME,
   TAB_DRAG_MIME,
@@ -29,6 +37,11 @@ import {
   openCardModal,
   closeModal,
   openSpaceModal,
+  openShortcutsSheet,
+  renderCardActionMenu,
+  closeCardActionMenu,
+  triggerSnackbarUndo,
+  isInteractionOverlayOpen,
   initModals,
 } from "./modals.js";
 import {
@@ -37,6 +50,8 @@ import {
   renderOpenTabs,
   registerTabObservers,
   cleanupTabs,
+  toggleTabDrawerPin,
+  syncTabDrawerPinFromState,
 } from "./tabs.js";
 import {
   getHorizontalAfterElement,
@@ -79,6 +94,12 @@ const sidebarExpandBtn = document.getElementById("sidebar-expand");
 const searchControl = document.getElementById("search-control");
 const searchInput = document.getElementById("search-input");
 const searchFocusBtn = document.getElementById("search-focus");
+const searchClearBtn = document.getElementById("search-clear");
+const shortcutsOpenBtn = document.getElementById("shortcuts-open");
+const isMacPlatform =
+  typeof navigator !== "undefined" &&
+  /Mac|iPhone|iPad|iPod/i.test(navigator.platform ?? navigator.userAgent ?? "");
+const SEARCH_PLACEHOLDER = `Search cards · ${isMacPlatform ? "⌘K" : "Ctrl+K"}`;
 let currentState = null;
 let searchDebounceTimer = null;
 let prevSearchTerm = null;
@@ -87,6 +108,48 @@ const getActiveSpace = (state = currentState) =>
   state?.spaces?.find((s) => s.id === state.preferences?.activeSpaceId) ??
   state?.spaces?.[0] ??
   null;
+
+const DEFAULT_ACCENT = "#007aff";
+
+const isEditableTarget = (target = document.activeElement) =>
+  Boolean(
+    target &&
+    (target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.isContentEditable),
+  );
+
+const findHoveredCardEl = () =>
+  document.querySelector(".card:hover") ??
+  document.querySelector(".card:focus-within") ??
+  null;
+
+const applyAccentForState = (state) => {
+  const root = document.documentElement;
+  if (!root) return;
+  if (state?.preferences?.viewMode === VIEW_MODES.FAVORITES) {
+    root.style.removeProperty("--accent");
+    root.style.removeProperty("--accent-light");
+    root.style.removeProperty("--accent-medium");
+    return;
+  }
+  const space = getActiveSpace(state);
+  const accent = space?.accent || DEFAULT_ACCENT;
+  root.style.setProperty("--accent", accent);
+  if (
+    typeof CSS !== "undefined" &&
+    CSS.supports?.("color: color-mix(in oklch, red 50%, blue)")
+  ) {
+    root.style.setProperty(
+      "--accent-light",
+      `color-mix(in oklch, ${accent} 12%, transparent)`,
+    );
+    root.style.setProperty(
+      "--accent-medium",
+      `color-mix(in oklch, ${accent} 22%, transparent)`,
+    );
+  }
+};
 const findBoard = (space, boardId) =>
   space?.boards?.find((board) => board.id === boardId) ?? null;
 const findSpaceById = (state, spaceId) =>
@@ -180,6 +243,8 @@ const handleStateChange = (state) => {
   const meta = state.meta ? { ...state.meta } : null;
   const metaAction = meta?.action ?? null;
   currentState = state;
+  applyAccentForState(state);
+  syncTabDrawerPinFromState();
   const currentSearchTerm = state.preferences.searchTerm ?? "";
   if (
     metaAction === "add-card" ||
@@ -205,10 +270,20 @@ const handleStateChange = (state) => {
       sidebarEl: boardSidebarEl,
       getActiveSpace,
     });
+    const totalCardsAcrossSpaces = (state.spaces ?? []).reduce(
+      (acc, space) =>
+        acc +
+        (space.boards ?? []).reduce(
+          (sum, board) => sum + (board.cards?.length ?? 0),
+          0,
+        ),
+      0,
+    );
     renderBoard(state, {
       boardEl,
       getActiveSpace,
       metaAction,
+      allowSampleTemplate: totalCardsAcrossSpaces === 0,
       attachDropTargets: (cardListEl) =>
         attachDropTargets(cardListEl, { addTabCardToBoard }),
       enableColumnDrag: (column) =>
@@ -223,6 +298,9 @@ const handleStateChange = (state) => {
   }
   if (searchInput !== document.activeElement)
     searchInput.value = state.preferences.searchTerm ?? "";
+  if (searchClearBtn) {
+    searchClearBtn.hidden = !(state.preferences.searchTerm ?? "");
+  }
   schedulePersist(state);
   scheduleDriveSync(state, { trigger: metaAction, meta });
 };
@@ -284,11 +362,9 @@ const addCard = ({ boardId, spaceId, payload, favicon }) => {
     { action: "add-card", addedCards: [{ id: cardId, spaceId, boardId }] },
   );
 };
-const deleteCard = ({ cardId, boardId, spaceId }) =>
-  updateState((draft) => {
-    const { board } = findCardContext(draft, { spaceId, boardId, cardId });
-    if (board) board.cards = board.cards.filter((card) => card.id !== cardId);
-  });
+const deleteCard = ({ cardId }) => {
+  performSoftDeleteCard(cardId);
+};
 const editSpace = ({ spaceId, name }) =>
   updateState((draft) => {
     const space = draft.spaces.find((item) => item.id === spaceId);
@@ -306,12 +382,42 @@ const addSpace = ({ name }) => {
     draft.preferences.activeSpaceId = spaceId;
   });
 };
-const deleteSpace = ({ spaceId }) =>
-  updateState((draft) => {
-    draft.spaces = draft.spaces.filter((space) => space.id !== spaceId);
-    if (draft.preferences.activeSpaceId === spaceId)
-      draft.preferences.activeSpaceId = draft.spaces[0]?.id ?? null;
+const deleteSpace = ({ spaceId }) => {
+  const space = findSpaceById(currentState, spaceId);
+  const hasCards =
+    space?.boards?.some((board) => (board.cards ?? []).length > 0) ?? false;
+  const proceed = hasCards
+    ? openConfirm(
+        "This space has cards inside. Delete it anyway? You can undo within 5 seconds.",
+      )
+    : Promise.resolve(true);
+  proceed.then((ok) => {
+    if (!ok) return;
+    const result = softDeleteSpace(currentState, spaceId);
+    if (!result.removed) return;
+    replaceState(result.nextState);
+    showSnackbar("Space deleted", {
+      duration: SNACKBAR_UNDO_DURATION_MS,
+      action: {
+        label: "Undo",
+        onClick: () => replaceState(restoreDeletedSpace(currentState, result)),
+      },
+    });
   });
+};
+const performSoftDeleteCard = (cardId) => {
+  const result = softDeleteCard(currentState, cardId);
+  if (!result.removed) return;
+  replaceState(result.nextState);
+  showSnackbar("Card deleted", {
+    duration: SNACKBAR_UNDO_DURATION_MS,
+    action: {
+      label: "Undo",
+      onClick: () => replaceState(restoreDeletedCard(currentState, result)),
+    },
+  });
+};
+
 const handleCardAction = (action, boardId, cardId, spaceId = null) => {
   const indices = findCardIndices(currentState, { spaceId, boardId, cardId });
   if (!indices) return;
@@ -334,19 +440,31 @@ const handleCardAction = (action, boardId, cardId, spaceId = null) => {
       if (target) target.done = !target.done;
     });
   if (action === "edit") return openCardModal({ boardId, cardId, spaceId });
+  if (action === "open") {
+    if (card.url) window.open(card.url, "_blank");
+    return;
+  }
   if (action !== "delete") return;
-  updateState((draft) => {
-    const board = draft.spaces[indices.spaceIdx]?.boards[indices.boardIdx];
-    if (board) board.cards = board.cards.filter((item) => item.id !== cardId);
-  });
-  showSnackbar("Card deleted.");
+  performSoftDeleteCard(cardId);
 };
 const handleCardPrimaryClick = (cardElement) => {
   const boardId = cardElement.dataset.boardId;
   const cardId = cardElement.dataset.cardId;
   const spaceId = cardElement.dataset.spaceId || null;
+  const isReadOnly = cardElement.dataset.readOnly === "true";
   const { card } = findCardContext(currentState, { spaceId, boardId, cardId });
-  if (card?.type === "link" && card.url) window.open(card.url, "_blank");
+  if (!card) return;
+  if (card.type === "link" && card.url) {
+    window.open(card.url, "_blank");
+    return;
+  }
+  if (isReadOnly && spaceId && boardId) {
+    updateState((draft) => {
+      draft.preferences.viewMode = VIEW_MODES.SPACES;
+      draft.preferences.activeSpaceId = spaceId;
+      draft.preferences.activeBoardId = boardId;
+    });
+  }
 };
 const getCurrentWindowId = () =>
   new Promise((resolve) => {
@@ -535,47 +653,163 @@ spaceTabsEl.addEventListener("dragend", () => {
 });
 boardEl.addEventListener("click", async (event) => {
   if (isSuppressCardClick()) return setSuppressCardClick(false);
+
+  const tagEl = event.target.closest(".card-tag[data-tag]");
+  if (tagEl) {
+    event.stopPropagation();
+    const tag = tagEl.dataset.tag;
+    searchInput.value = `#${tag}`;
+    searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+    return;
+  }
+
+  const emptyActionEl = event.target.closest("[data-empty-action]");
+  if (emptyActionEl) {
+    const action = emptyActionEl.dataset.emptyAction;
+    if (action === "create-space") return openSpaceModal();
+    if (action === "create-board") return addColumnBtn?.click();
+    if (action === "use-sample") return injectSampleBoard();
+    return;
+  }
+
+  const bannerEl = event.target.closest(".board-search-banner");
+  if (bannerEl?.dataset.jumpBoardId) {
+    const targetSpaceId = bannerEl.dataset.jumpSpaceId || null;
+    const targetBoardId = bannerEl.dataset.jumpBoardId;
+    updateState((draft) => {
+      if (targetSpaceId) draft.preferences.activeSpaceId = targetSpaceId;
+      draft.preferences.activeBoardId = targetBoardId;
+      draft.preferences.viewMode = VIEW_MODES.SPACES;
+    });
+    return;
+  }
+
   const cardActionEl = event.target.closest("[data-card-action]");
   if (cardActionEl) {
     const card = cardActionEl.closest(".card");
-    if (card)
-      handleCardAction(
-        cardActionEl.dataset.cardAction,
-        card.dataset.boardId,
-        card.dataset.cardId,
-        card.dataset.spaceId || null,
-      );
+    if (!card) return;
+    const action = cardActionEl.dataset.cardAction;
+    if (action === "menu") {
+      event.stopPropagation();
+      const cardId = card.dataset.cardId;
+      const boardId = card.dataset.boardId;
+      const spaceId = card.dataset.spaceId || null;
+      const { card: ctxCard } = findCardContext(currentState, {
+        spaceId,
+        boardId,
+        cardId,
+      });
+      const readOnly = card.dataset.readOnly === "true";
+      renderCardActionMenu(card, ctxCard ?? { type: "" }, {
+        hideEdit: readOnly,
+        hideDelete: readOnly,
+      });
+      return;
+    }
+    handleCardAction(
+      action,
+      card.dataset.boardId,
+      card.dataset.cardId,
+      card.dataset.spaceId || null,
+    );
+    closeCardActionMenu();
     return;
   }
+
   const clickedCard = event.target.closest(".card");
-  if (clickedCard && !event.target.closest("[data-card-action]"))
-    return handleCardPrimaryClick(clickedCard);
+  if (clickedCard) return handleCardPrimaryClick(clickedCard);
+
   const openGroupBtn = event.target.closest("[data-board-open]");
   if (openGroupBtn) return openBoardLinks(openGroupBtn.dataset.boardOpen);
+
+  const addCardChipEl = event.target.closest("[data-add-card-type]");
+  if (addCardChipEl) {
+    return openCardModal({
+      boardId: addCardChipEl.dataset.boardId,
+      initialType: addCardChipEl.dataset.addCardType,
+    });
+  }
+
   const addCardBtnEl = event.target.closest(".add-card");
   if (addCardBtnEl)
     return openCardModal({ boardId: addCardBtnEl.dataset.boardId });
+
   const deleteColumnEl = event.target.closest("[data-column-delete]");
-  if (
-    !deleteColumnEl ||
-    !(await openConfirm(
-      "Delete this board? Cards inside will also be removed.",
-    ))
-  )
-    return;
-  updateState((draft) => {
-    const active = getActiveSpace(draft);
-    if (!active) return;
-    const deletedId = deleteColumnEl.dataset.columnDelete;
-    const idx = active.boards.findIndex((board) => board.id === deletedId);
-    active.boards = active.boards.filter((board) => board.id !== deletedId);
-    if (draft.preferences.activeBoardId === deletedId) {
-      draft.preferences.activeBoardId =
-        active.boards[idx]?.id ?? active.boards[idx - 1]?.id ?? null;
-    }
+  if (!deleteColumnEl) return;
+  const targetBoardId = deleteColumnEl.dataset.columnDelete;
+  const board = findBoard(getActiveSpace(), targetBoardId);
+  const hasCards = (board?.cards ?? []).length > 0;
+  if (hasCards) {
+    const ok = await openConfirm(
+      "Delete this board? Cards inside will be removed (Undo within 5 seconds).",
+    );
+    if (!ok) return;
+  }
+  const result = softDeleteBoard(currentState, targetBoardId);
+  if (!result.removed) return;
+  replaceState(result.nextState);
+  showSnackbar("Board deleted", {
+    duration: SNACKBAR_UNDO_DURATION_MS,
+    action: {
+      label: "Undo",
+      onClick: () => replaceState(restoreDeletedBoard(currentState, result)),
+    },
   });
-  showSnackbar("Board deleted.");
 });
+
+const injectSampleBoard = () => {
+  updateState((draft) => {
+    const active =
+      draft.spaces.find((s) => s.id === draft.preferences.activeSpaceId) ??
+      draft.spaces[0];
+    if (!active) return;
+    const newBoardId = generateId("board");
+    active.boards.push({
+      id: newBoardId,
+      name: "Reading list",
+      cards: [
+        {
+          id: generateId("card"),
+          type: "link",
+          title: "How to use Taboard",
+          note: "",
+          url: "https://github.com/soohanpark/taboard",
+          tags: ["taboard", "tips"],
+          favorite: false,
+          done: false,
+          favicon: "",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: generateId("card"),
+          type: "note",
+          title: "Drag tabs from the left to save",
+          note: "Hover the left drawer or press T to pin it open.",
+          tags: [],
+          favorite: false,
+          done: false,
+          favicon: "",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: generateId("card"),
+          type: "todo",
+          title: "Try ⌘/Ctrl + K to search",
+          note: "",
+          tags: [],
+          favorite: false,
+          done: false,
+          favicon: "",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    });
+    draft.preferences.activeBoardId = newBoardId;
+  });
+};
 boardEl.addEventListener("focusout", (event) => {
   if (!event.target.classList?.contains("column-title")) return;
   const boardId = event.target.dataset.boardId;
@@ -587,6 +821,17 @@ boardEl.addEventListener("focusout", (event) => {
   });
 });
 boardEl.addEventListener("keydown", (event) => {
+  if (event.target?.classList?.contains("card-tag")) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      const tag = event.target.dataset.tag;
+      if (tag) {
+        searchInput.value = `#${tag}`;
+        searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      return;
+    }
+  }
   if (
     !event.target.classList?.contains("column-title") ||
     event.key !== "Enter"
@@ -690,8 +935,10 @@ boardSidebarListEl?.addEventListener("dragover", (event) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
     boardSidebarListEl
-      .querySelectorAll(".tab-drop-target")
-      .forEach((el) => el.classList.remove("tab-drop-target"));
+      .querySelectorAll(".tab-drop-target, .card-drop-target")
+      .forEach((el) =>
+        el.classList.remove("tab-drop-target", "card-drop-target"),
+      );
     const item = event.target.closest(".board-sidebar-item");
     if (item) item.classList.add("tab-drop-target");
     return;
@@ -700,18 +947,26 @@ boardSidebarListEl?.addEventListener("dragover", (event) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
     boardSidebarListEl
-      .querySelectorAll(".tab-drop-target")
-      .forEach((el) => el.classList.remove("tab-drop-target"));
+      .querySelectorAll(".tab-drop-target, .card-drop-target")
+      .forEach((el) =>
+        el.classList.remove("tab-drop-target", "card-drop-target"),
+      );
     const item = event.target.closest(".board-sidebar-item");
-    if (item) item.classList.add("tab-drop-target");
+    if (item) item.classList.add("card-drop-target");
   }
 });
 boardSidebarListEl?.addEventListener("dragleave", (event) => {
   if (boardSidebarListEl.contains(event.relatedTarget)) return;
   boardSidebarListEl
-    .querySelectorAll(".sidebar-drop-target, .tab-drop-target")
+    .querySelectorAll(
+      ".sidebar-drop-target, .tab-drop-target, .card-drop-target",
+    )
     .forEach((el) =>
-      el.classList.remove("sidebar-drop-target", "tab-drop-target"),
+      el.classList.remove(
+        "sidebar-drop-target",
+        "tab-drop-target",
+        "card-drop-target",
+      ),
     );
 });
 boardSidebarListEl?.addEventListener("drop", (event) => {
@@ -737,20 +992,25 @@ boardSidebarListEl?.addEventListener("drop", (event) => {
   if (activeDragCard && !draggingSidebarBoardId) {
     event.preventDefault();
     boardSidebarListEl
-      .querySelectorAll(".tab-drop-target")
-      .forEach((el) => el.classList.remove("tab-drop-target"));
+      .querySelectorAll(".tab-drop-target, .card-drop-target")
+      .forEach((el) =>
+        el.classList.remove("tab-drop-target", "card-drop-target"),
+      );
     const item = event.target.closest(".board-sidebar-item");
     if (!item?.dataset.boardId) return;
+    const targetSpace = getActiveSpace();
+    const targetBoard = findBoard(targetSpace, item.dataset.boardId);
     moveCard(
       activeDragCard.cardId,
       activeDragCard.boardId,
       item.dataset.boardId,
       0,
       activeDragCard.spaceId,
-      getActiveSpace()?.id ?? null,
+      targetSpace?.id ?? null,
     );
     setSuppressCardClick(true);
     setTimeout(() => setSuppressCardClick(false), 0);
+    if (targetBoard) showSnackbar(`Moved to ${targetBoard.name}`);
     return;
   }
   if (!draggingSidebarBoardId) return;
@@ -811,52 +1071,165 @@ addColumnBtn?.addEventListener("click", () => {
   });
   showSnackbar("Board added.");
 });
-searchControl?.addEventListener("mouseenter", focusSearchInput);
+if (searchInput) {
+  searchInput.placeholder = SEARCH_PLACEHOLDER;
+}
 searchFocusBtn.addEventListener("click", focusSearchInput);
+searchClearBtn?.addEventListener("click", () => {
+  searchInput.value = "";
+  searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+  focusSearchInput();
+});
+searchInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && searchInput.value) {
+    event.preventDefault();
+    event.stopPropagation();
+    searchInput.value = "";
+    searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+});
+shortcutsOpenBtn?.addEventListener("click", openShortcutsSheet);
+const navigateActiveBoard = (direction) => {
+  const space = getActiveSpace();
+  if (!space?.boards?.length) return;
+  const activeBoardId = currentState.preferences.activeBoardId;
+  let idx = space.boards.findIndex((b) => b.id === activeBoardId);
+  if (idx === -1) idx = 0;
+  const nextIdx =
+    direction > 0
+      ? Math.min(idx + 1, space.boards.length - 1)
+      : Math.max(idx - 1, 0);
+  if (nextIdx === idx) return;
+  updateState((draft) => {
+    draft.preferences.activeBoardId = space.boards[nextIdx].id;
+  });
+  const nextItem = boardSidebarListEl?.querySelector(
+    `[data-board-id="${space.boards[nextIdx].id}"]`,
+  );
+  nextItem?.focus();
+};
+
+const toggleFavoriteOnFocusedCard = () => {
+  const cardEl = findHoveredCardEl();
+  if (!cardEl) return false;
+  if (cardEl.dataset.readOnly === "true") return false;
+  handleCardAction(
+    "favorite",
+    cardEl.dataset.boardId,
+    cardEl.dataset.cardId,
+    cardEl.dataset.spaceId || null,
+  );
+  return true;
+};
+
 window.addEventListener("keydown", (event) => {
+  if (isInteractionOverlayOpen()) return;
+
+  // ⌘/Ctrl + K: focus search
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
     event.preventDefault();
     focusSearchInput();
     return;
   }
-  if (currentState?.preferences.viewMode !== VIEW_MODES.SPACES) return;
-  const space = getActiveSpace();
-  if (!space?.boards?.length) return;
-  // Arrow Up/Down to navigate boards
-  if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-    const isInputFocused =
-      document.activeElement?.tagName === "INPUT" ||
-      document.activeElement?.tagName === "TEXTAREA" ||
-      document.activeElement?.isContentEditable;
-    if (isInputFocused) return;
-    event.preventDefault();
-    const activeBoardId = currentState.preferences.activeBoardId;
-    let idx = space.boards.findIndex((b) => b.id === activeBoardId);
-    if (idx === -1) idx = 0;
-    const nextIdx =
-      event.key === "ArrowDown"
-        ? Math.min(idx + 1, space.boards.length - 1)
-        : Math.max(idx - 1, 0);
-    if (nextIdx !== idx) {
-      updateState((draft) => {
-        draft.preferences.activeBoardId = space.boards[nextIdx].id;
-      });
+  // ⌘/Ctrl + Z: undo (when input not focused)
+  if (
+    (event.metaKey || event.ctrlKey) &&
+    !event.shiftKey &&
+    event.key.toLowerCase() === "z" &&
+    !isEditableTarget()
+  ) {
+    if (triggerSnackbarUndo()) {
+      event.preventDefault();
     }
-    const nextItem = boardSidebarListEl?.querySelector(
-      `[data-board-id="${space.boards[nextIdx].id}"]`,
-    );
-    nextItem?.focus();
     return;
   }
-  // Alt + number (1-9) to quick-switch boards
-  if (event.altKey && event.key >= "1" && event.key <= "9") {
-    const idx = parseInt(event.key, 10) - 1;
-    if (idx < space.boards.length) {
-      event.preventDefault();
-      updateState((draft) => {
-        draft.preferences.activeBoardId = space.boards[idx].id;
-      });
+
+  if (isEditableTarget()) return;
+
+  if (currentState?.preferences.viewMode === VIEW_MODES.SPACES) {
+    const space = getActiveSpace();
+    if (space?.boards?.length) {
+      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+        event.preventDefault();
+        navigateActiveBoard(event.key === "ArrowDown" ? 1 : -1);
+        return;
+      }
+      if (event.altKey && event.key >= "1" && event.key <= "9") {
+        const idx = parseInt(event.key, 10) - 1;
+        if (idx < space.boards.length) {
+          event.preventDefault();
+          updateState((draft) => {
+            draft.preferences.activeBoardId = space.boards[idx].id;
+          });
+        }
+        return;
+      }
     }
+  }
+
+  // Single-key shortcuts (no modifiers)
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+  // ? (Shift + /) opens shortcut sheet
+  if (event.key === "?") {
+    event.preventDefault();
+    openShortcutsSheet();
+    return;
+  }
+
+  // single letter / bracket keys
+  switch (event.key) {
+    case "T":
+    case "t": {
+      event.preventDefault();
+      toggleTabDrawerPin();
+      return;
+    }
+    case "N":
+    case "n": {
+      const space = getActiveSpace();
+      const boardId = currentState?.preferences?.activeBoardId;
+      if (
+        currentState?.preferences.viewMode === VIEW_MODES.SPACES &&
+        space?.boards?.length &&
+        boardId
+      ) {
+        event.preventDefault();
+        openCardModal({ boardId });
+      }
+      return;
+    }
+    case "B":
+    case "b": {
+      if (currentState?.preferences.viewMode !== VIEW_MODES.FAVORITES) {
+        event.preventDefault();
+        addColumnBtn?.click();
+      }
+      return;
+    }
+    case "[": {
+      if (currentState?.preferences.viewMode === VIEW_MODES.SPACES) {
+        event.preventDefault();
+        navigateActiveBoard(-1);
+      }
+      return;
+    }
+    case "]": {
+      if (currentState?.preferences.viewMode === VIEW_MODES.SPACES) {
+        event.preventDefault();
+        navigateActiveBoard(1);
+      }
+      return;
+    }
+    case "F":
+    case "f": {
+      if (toggleFavoriteOnFocusedCard()) {
+        event.preventDefault();
+      }
+      return;
+    }
+    default:
+      return;
   }
 });
 searchInput.addEventListener("input", (event) => {

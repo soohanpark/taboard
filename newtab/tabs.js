@@ -5,10 +5,13 @@ import {
   SEARCH_DEBOUNCE_MS,
 } from "./constants.js";
 import { getDraggingCard } from "./drag.js";
+import { getState, updateState } from "./state.js";
 
 const tabListEl = document.getElementById("tab-list");
 const tabCountEl = document.getElementById("tab-count");
 const tabFilterInput = document.getElementById("tab-filter");
+const tabDrawerEl = document.getElementById("tab-drawer");
+const tabDrawerPinBtn = document.getElementById("tab-drawer-pin");
 
 let openTabs = [];
 let tabFilter = "";
@@ -20,6 +23,29 @@ let observersRegistered = false;
 
 let tabCallbacks = {
   addTabCardToBoard: null,
+};
+
+const applyDrawerPinState = (pinned) => {
+  if (!tabDrawerEl) return;
+  tabDrawerEl.dataset.pinned = pinned ? "true" : "false";
+  if (tabDrawerPinBtn) {
+    tabDrawerPinBtn.setAttribute("aria-pressed", pinned ? "true" : "false");
+    tabDrawerPinBtn.classList.toggle("is-active", pinned);
+  }
+};
+
+export const syncTabDrawerPinFromState = () => {
+  const state = getState();
+  applyDrawerPinState(Boolean(state?.preferences?.tabDrawerPinned));
+};
+
+export const toggleTabDrawerPin = () => {
+  const next = !Boolean(getState()?.preferences?.tabDrawerPinned);
+  updateState((draft) => {
+    if (!draft.preferences) draft.preferences = {};
+    draft.preferences.tabDrawerPinned = next;
+  });
+  applyDrawerPinState(next);
 };
 
 const safeTabsQuery = (query) =>
@@ -194,6 +220,8 @@ export const initTabs = (callbacks = {}) => {
 
   if (tabsInitialized) return;
   tabsInitialized = true;
+
+  tabDrawerPinBtn?.addEventListener("click", toggleTabDrawerPin);
 
   tabFilterInput?.addEventListener("input", (event) => {
     tabFilter = event.target.value.trim();

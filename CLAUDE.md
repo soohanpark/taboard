@@ -20,12 +20,12 @@
 
 ## Project Overview
 
-**Taboard** is a Chrome Extension (Manifest V3) that replaces the new tab page with a tab manager + personal kanban board.
+**Taboard** is a Chrome Extension (Manifest V3) that replaces the new tab page with a tab manager + personal boards.
 
 ### Core Features
 - Tab drawer (sidebar): view/search/drag tabs to board
 - Spaces/Boards/Cards hierarchy with link/note/todo card types
-- Kanban board sidebar navigation for quick space/board switching; drag cards or tabs onto sidebar boards to move/save them
+- Boards sidebar navigation for quick space/board switching; drag cards or tabs onto sidebar boards to move/save them
 - Favorites view, bulk open, keyboard shortcuts
 - Google Drive sync (optional, auto every 30 min)
 

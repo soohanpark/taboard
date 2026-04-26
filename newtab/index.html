@@ -26,9 +26,36 @@
   </head>
   <body>
     <div id="app">
-      <aside class="tab-drawer" id="tab-drawer">
+      <aside
+        class="tab-drawer"
+        id="tab-drawer"
+        role="navigation"
+        aria-label="Open tabs"
+        data-pinned="false"
+      >
         <div class="drawer-head">
           <div class="drawer-count" id="tab-count">0</div>
+          <button
+            type="button"
+            class="drawer-pin"
+            id="tab-drawer-pin"
+            aria-pressed="false"
+            aria-label="Pin tab drawer"
+            title="Pin tab drawer (T)"
+          >
+            <svg
+              class="drawer-pin-icon"
+              viewBox="0 0 18 18"
+              width="18"
+              height="18"
+              aria-hidden="true"
+            >
+              <path
+                fill="currentColor"
+                d="M11.4 1.6a1 1 0 0 1 1.4 0l3.6 3.6a1 1 0 0 1 0 1.4l-2.5 2.5 1 1a1 1 0 0 1-1.4 1.4L11.5 10l-3.4 3.4 1 1a1 1 0 0 1-1.4 1.4l-1-1-2.4 2.4a1 1 0 0 1-1.4-1.4l2.4-2.4-1-1a1 1 0 0 1 1.4-1.4l1 1L9.1 7.6 8.1 6.6a1 1 0 0 1 1.4-1.4l1 1L13 3.7l-1.6-1.6a1 1 0 0 1 0-1.4l.1-.1z"
+              />
+            </svg>
+          </button>
         </div>
         <div class="drawer-list" id="tab-list"></div>
         <div class="drawer-filter">
@@ -52,8 +79,19 @@
                 class="icon-button search-button"
                 id="search-focus"
                 title="Search (⌘/Ctrl + K)"
+                aria-label="Focus search"
               >
                 🔍
+              </button>
+              <button
+                type="button"
+                class="search-clear"
+                id="search-clear"
+                title="Clear search (Esc)"
+                aria-label="Clear search"
+                hidden
+              >
+                ×
               </button>
             </div>
             <div class="drive-control" id="drive-control">
@@ -62,6 +100,8 @@
                 class="icon-button drive-button"
                 id="drive-connect"
                 title="Connect Google Drive"
+                aria-haspopup="menu"
+                aria-expanded="false"
               >
                 <svg viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg">
                   <title>Google Drive</title>
@@ -97,7 +137,12 @@
                 id="drive-menu"
                 role="menu"
                 aria-label="Drive options"
+                aria-hidden="true"
+                data-open="false"
               >
+                <div class="drive-menu-status" id="drive-menu-status">
+                  Not synced yet
+                </div>
                 <button
                   type="button"
                   class="drive-menu-item"
@@ -114,6 +159,15 @@
                 </button>
               </div>
             </div>
+            <button
+              type="button"
+              class="icon-button shortcuts-button"
+              id="shortcuts-open"
+              title="Keyboard shortcuts (?)"
+              aria-label="Show keyboard shortcuts"
+            >
+              <span aria-hidden="true">?</span>
+            </button>
             <a
               class="icon-button github-button"
               href="https://github.com/soohanpark/taboard"
@@ -211,14 +265,21 @@
             <span>Tags (comma separated)</span>
             <input name="tags" placeholder="design, reading" />
           </label>
-          <div class="form-actions">
-            <button type="button" class="ghost-button" data-close="card">
-              Cancel
-            </button>
-            <button type="button" class="ghost-button" data-delete-card>
+          <div class="form-actions form-actions-split">
+            <button
+              type="button"
+              class="ghost-button danger"
+              data-delete-card
+              hidden
+            >
               Delete
             </button>
-            <button type="submit">Save</button>
+            <div class="form-actions-end">
+              <button type="button" class="ghost-button" data-close="card">
+                Cancel
+              </button>
+              <button type="submit">Save</button>
+            </div>
           </div>
         </form>
       </div>
@@ -241,16 +302,75 @@
             <span>Space name</span>
             <input name="name" placeholder="e.g., WORK" required />
           </label>
-          <div class="form-actions">
-            <button type="button" class="ghost-button" data-close="space">
-              Cancel
-            </button>
-            <button type="button" class="ghost-button" data-delete-space>
+          <div class="form-actions form-actions-split">
+            <button
+              type="button"
+              class="ghost-button danger"
+              data-delete-space
+              hidden
+            >
               Delete
             </button>
-            <button type="submit">Save</button>
+            <div class="form-actions-end">
+              <button type="button" class="ghost-button" data-close="space">
+                Cancel
+              </button>
+              <button type="submit">Save</button>
+            </div>
           </div>
         </form>
+      </div>
+    </section>
+
+    <section class="modal hidden" id="shortcuts-modal" aria-hidden="true">
+      <div class="modal-backdrop" data-close="shortcuts"></div>
+      <div
+        class="modal-panel shortcuts-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="shortcuts-modal-title"
+      >
+        <header>
+          <h3 id="shortcuts-modal-title">Keyboard shortcuts</h3>
+          <button
+            type="button"
+            class="ghost-button"
+            data-close="shortcuts"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </header>
+        <div class="shortcuts-grid" id="shortcuts-grid">
+          <div class="shortcuts-row">
+            <kbd>N</kbd><span>New card on current board</span>
+          </div>
+          <div class="shortcuts-row">
+            <kbd>B</kbd><span>New board in current space</span>
+          </div>
+          <div class="shortcuts-row">
+            <kbd>[</kbd><span>Previous board</span>
+          </div>
+          <div class="shortcuts-row"><kbd>]</kbd><span>Next board</span></div>
+          <div class="shortcuts-row">
+            <kbd>F</kbd><span>Toggle favorite on focused card</span>
+          </div>
+          <div class="shortcuts-row">
+            <kbd>T</kbd><span>Toggle tab drawer pin</span>
+          </div>
+          <div class="shortcuts-row">
+            <kbd>?</kbd><span>Show keyboard shortcuts</span>
+          </div>
+          <div class="shortcuts-row">
+            <kbd data-key="search">⌘/Ctrl + K</kbd><span>Focus search</span>
+          </div>
+          <div class="shortcuts-row">
+            <kbd>Esc</kbd><span>Close modals / popovers / snackbar</span>
+          </div>
+          <div class="shortcuts-row">
+            <kbd data-key="undo">⌘/Ctrl + Z</kbd><span>Undo last delete</span>
+          </div>
+        </div>
       </div>
     </section>
 
