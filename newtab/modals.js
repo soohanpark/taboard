@@ -221,6 +221,9 @@ export const openShortcutsSheet = () => {
   shortcutsModalEl.setAttribute("aria-hidden", "false");
 };
 
+export const isInteractionOverlayOpen = (root = document) =>
+  Boolean(root?.querySelector?.(".modal.visible, .card-action-menu"));
+
 export const closeCardActionMenu = () => {
   if (activeCardMenu) {
     activeCardMenu.remove();
@@ -228,14 +231,7 @@ export const closeCardActionMenu = () => {
   }
 };
 
-export const renderCardActionMenu = (cardEl, card, options = {}) => {
-  closeCardActionMenu();
-  if (!cardEl) return;
-
-  const menu = document.createElement("div");
-  menu.className = "card-action-menu";
-  menu.setAttribute("role", "menu");
-
+const getCardActionMenuItems = (card, options = {}) => {
   const items = [];
   if (!options.hideEdit) {
     items.push({ action: "edit", label: "Edit" });
@@ -244,9 +240,22 @@ export const renderCardActionMenu = (cardEl, card, options = {}) => {
     items.push({ action: "open", label: "Open in new tab" });
   }
   if (!options.hideDelete) {
-    items.push({ separator: true });
+    if (items.length) items.push({ separator: true });
     items.push({ action: "delete", label: "Delete", danger: true });
   }
+  return items;
+};
+
+export const renderCardActionMenu = (cardEl, card, options = {}) => {
+  closeCardActionMenu();
+  if (!cardEl) return;
+
+  const items = getCardActionMenuItems(card, options);
+  if (!items.some((item) => !item.separator)) return null;
+
+  const menu = document.createElement("div");
+  menu.className = "card-action-menu";
+  menu.setAttribute("role", "menu");
 
   items.forEach((item) => {
     if (item.separator) {

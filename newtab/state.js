@@ -304,10 +304,20 @@ export const softDeleteCard = (state, cardId) => {
   const snapshot = clone(state);
   const next = clone(state);
   let removed = false;
+  let deleted = null;
   for (const space of next.spaces ?? []) {
     for (const board of space.boards ?? []) {
       const idx = (board.cards ?? []).findIndex((card) => card.id === cardId);
       if (idx !== -1) {
+        const card = board.cards[idx];
+        deleted = {
+          type: "card",
+          card: clone(card),
+          cardId: card.id,
+          cardIndex: idx,
+          boardId: board.id,
+          spaceId: space.id,
+        };
         board.cards.splice(idx, 1);
         removed = true;
         break;
@@ -315,26 +325,39 @@ export const softDeleteCard = (state, cardId) => {
     }
     if (removed) break;
   }
-  return { nextState: next, snapshot, removed };
+  return { nextState: next, snapshot, removed, deleted };
 };
 
 export const softDeleteBoard = (state, boardId) => {
   const snapshot = clone(state);
   const next = clone(state);
   let removed = false;
+  let deleted = null;
   for (const space of next.spaces ?? []) {
     const idx = (space.boards ?? []).findIndex((board) => board.id === boardId);
     if (idx !== -1) {
+      const board = space.boards[idx];
+      deleted = {
+        type: "board",
+        board: clone(board),
+        boardId: board.id,
+        boardIndex: idx,
+        spaceId: space.id,
+        wasActiveBoard: next.preferences?.activeBoardId === boardId,
+        activeBoardIdBefore: snapshot.preferences?.activeBoardId ?? null,
+        activeBoardIdAfter: null,
+      };
       space.boards.splice(idx, 1);
       removed = true;
       if (next.preferences?.activeBoardId === boardId) {
         next.preferences.activeBoardId =
           space.boards[idx]?.id ?? space.boards[idx - 1]?.id ?? null;
       }
+      deleted.activeBoardIdAfter = next.preferences?.activeBoardId ?? null;
       break;
     }
   }
-  return { nextState: next, snapshot, removed };
+  return { nextState: next, snapshot, removed, deleted };
 };
 
 export const softDeleteSpace = (state, spaceId) => {
@@ -342,15 +365,124 @@ export const softDeleteSpace = (state, spaceId) => {
   const next = clone(state);
   const idx = (next.spaces ?? []).findIndex((space) => space.id === spaceId);
   let removed = false;
+  let deleted = null;
   if (idx !== -1) {
+    const space = next.spaces[idx];
+    deleted = {
+      type: "space",
+      space: clone(space),
+      spaceId: space.id,
+      spaceIndex: idx,
+      wasActiveSpace: next.preferences?.activeSpaceId === spaceId,
+      activeSpaceIdBefore: snapshot.preferences?.activeSpaceId ?? null,
+      activeBoardIdBefore: snapshot.preferences?.activeBoardId ?? null,
+      activeSpaceIdAfter: null,
+      activeBoardIdAfter: null,
+    };
     next.spaces.splice(idx, 1);
     removed = true;
     if (next.preferences?.activeSpaceId === spaceId) {
       next.preferences.activeSpaceId = next.spaces[0]?.id ?? null;
       next.preferences.activeBoardId = next.spaces[0]?.boards?.[0]?.id ?? null;
     }
+    deleted.activeSpaceIdAfter = next.preferences?.activeSpaceId ?? null;
+    deleted.activeBoardIdAfter = next.preferences?.activeBoardId ?? null;
   }
-  return { nextState: next, snapshot, removed };
+  return { nextState: next, snapshot, removed, deleted };
+};
+
+const getDeletion = (payload, type) => {
+  const deletion = payload?.deleted ?? payload;
+  return deletion?.type === type ? deletion : null;
+};
+
+const boundedInsertIndex = (index, length) => {
+  const fallback = Number.isInteger(index) ? index : length;
+  return Math.max(0, Math.min(fallback, length));
+};
+
+const boardContainsCard = (board, cardId) =>
+  (board?.cards ?? []).some((card) => card.id === cardId);
+
+const spaceContainsBoard = (space, boardId) =>
+  (space?.boards ?? []).some((board) => board.id === boardId);
+
+export const restoreDeletedCard = (state, payload) => {
+  const deletion = getDeletion(payload, "card");
+  const card = deletion?.card ? clone(deletion.card) : null;
+  if (!state || !card || !deletion.boardId) return clone(state);
+
+  const next = clone(state);
+  const space =
+    (next.spaces ?? []).find((item) => item.id === deletion.spaceId) ??
+    (next.spaces ?? []).find((item) =>
+      spaceContainsBoard(item, deletion.boardId),
+    );
+  const board = space?.boards?.find((item) => item.id === deletion.boardId);
+  if (!board) return next;
+  if (!Array.isArray(board.cards)) board.cards = [];
+  if (boardContainsCard(board, card.id)) return next;
+
+  const index = boundedInsertIndex(deletion.cardIndex, board.cards.length);
+  board.cards.splice(index, 0, card);
+  return next;
+};
+
+export const restoreDeletedBoard = (state, payload) => {
+  const deletion = getDeletion(payload, "board");
+  const board = deletion?.board ? clone(deletion.board) : null;
+  if (!state || !board || !deletion.spaceId) return clone(state);
+
+  const next = clone(state);
+  const space = (next.spaces ?? []).find(
+    (item) => item.id === deletion.spaceId,
+  );
+  if (!space) return next;
+  if (!Array.isArray(space.boards)) space.boards = [];
+  if (spaceContainsBoard(space, board.id)) return next;
+
+  const index = boundedInsertIndex(deletion.boardIndex, space.boards.length);
+  space.boards.splice(index, 0, board);
+
+  if (
+    deletion.wasActiveBoard &&
+    next.preferences?.activeSpaceId === deletion.spaceId &&
+    next.preferences?.activeBoardId === deletion.activeBoardIdAfter
+  ) {
+    next.preferences.activeBoardId = deletion.activeBoardIdBefore ?? board.id;
+  }
+
+  return next;
+};
+
+export const restoreDeletedSpace = (state, payload) => {
+  const deletion = getDeletion(payload, "space");
+  const space = deletion?.space ? clone(deletion.space) : null;
+  if (!state || !space) return clone(state);
+
+  const next = clone(state);
+  if (!Array.isArray(next.spaces)) next.spaces = [];
+  if (next.spaces.some((item) => item.id === space.id)) return next;
+
+  const index = boundedInsertIndex(deletion.spaceIndex, next.spaces.length);
+  next.spaces.splice(index, 0, space);
+
+  if (
+    deletion.wasActiveSpace &&
+    next.preferences?.activeSpaceId === deletion.activeSpaceIdAfter &&
+    next.preferences?.activeBoardId === deletion.activeBoardIdAfter
+  ) {
+    const restoredBoardExists = spaceContainsBoard(
+      space,
+      deletion.activeBoardIdBefore,
+    );
+    next.preferences.activeSpaceId = deletion.activeSpaceIdBefore ?? space.id;
+    next.preferences.activeBoardId = restoredBoardExists
+      ? deletion.activeBoardIdBefore
+      : (space.boards?.[0]?.id ?? null);
+  }
+
+  return next;
 };
 
 const matchCardForCount = (card, term) => {

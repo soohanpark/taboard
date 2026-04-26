@@ -9,6 +9,9 @@ import {
   softDeleteCard,
   softDeleteBoard,
   softDeleteSpace,
+  restoreDeletedCard,
+  restoreDeletedBoard,
+  restoreDeletedSpace,
 } from "./state.js";
 import { loadStateFromStorage } from "./storage.js";
 import { initDrive, subscribeDrive } from "./drive.js";
@@ -38,6 +41,7 @@ import {
   renderCardActionMenu,
   closeCardActionMenu,
   triggerSnackbarUndo,
+  isInteractionOverlayOpen,
   initModals,
 } from "./modals.js";
 import {
@@ -391,13 +395,12 @@ const deleteSpace = ({ spaceId }) => {
     if (!ok) return;
     const result = softDeleteSpace(currentState, spaceId);
     if (!result.removed) return;
-    const snapshot = result.snapshot;
     replaceState(result.nextState);
     showSnackbar("Space deleted", {
       duration: SNACKBAR_UNDO_DURATION_MS,
       action: {
         label: "Undo",
-        onClick: () => replaceState(snapshot),
+        onClick: () => replaceState(restoreDeletedSpace(currentState, result)),
       },
     });
   });
@@ -405,13 +408,12 @@ const deleteSpace = ({ spaceId }) => {
 const performSoftDeleteCard = (cardId) => {
   const result = softDeleteCard(currentState, cardId);
   if (!result.removed) return;
-  const snapshot = result.snapshot;
   replaceState(result.nextState);
   showSnackbar("Card deleted", {
     duration: SNACKBAR_UNDO_DURATION_MS,
     action: {
       label: "Undo",
-      onClick: () => replaceState(snapshot),
+      onClick: () => replaceState(restoreDeletedCard(currentState, result)),
     },
   });
 };
@@ -745,13 +747,12 @@ boardEl.addEventListener("click", async (event) => {
   }
   const result = softDeleteBoard(currentState, targetBoardId);
   if (!result.removed) return;
-  const snapshot = result.snapshot;
   replaceState(result.nextState);
   showSnackbar("Board deleted", {
     duration: SNACKBAR_UNDO_DURATION_MS,
     action: {
       label: "Undo",
-      onClick: () => replaceState(snapshot),
+      onClick: () => replaceState(restoreDeletedBoard(currentState, result)),
     },
   });
 });
@@ -1122,6 +1123,8 @@ const toggleFavoriteOnFocusedCard = () => {
 };
 
 window.addEventListener("keydown", (event) => {
+  if (isInteractionOverlayOpen()) return;
+
   // ⌘/Ctrl + K: focus search
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
     event.preventDefault();

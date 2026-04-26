@@ -180,20 +180,23 @@ export const createCardElement = (card, boardId, searchTerm, options = {}) => {
     cardEl.classList.add("card-no-animate");
   }
 
-  const floating = document.createElement("div");
-  floating.className = "card-floating-actions";
+  const hasMenuActions = !readOnly || (card.type === "link" && card.url);
+  if (hasMenuActions) {
+    const floating = document.createElement("div");
+    floating.className = "card-floating-actions";
 
-  const moreIcon = document.createElement("button");
-  moreIcon.type = "button";
-  moreIcon.className = "card-floating-button card-menu-button";
-  moreIcon.dataset.cardAction = "menu";
-  moreIcon.title = "More actions";
-  moreIcon.textContent = "⋯";
-  moreIcon.setAttribute("aria-label", "More actions");
-  moreIcon.setAttribute("aria-haspopup", "menu");
-  floating.appendChild(moreIcon);
+    const moreIcon = document.createElement("button");
+    moreIcon.type = "button";
+    moreIcon.className = "card-floating-button card-menu-button";
+    moreIcon.dataset.cardAction = "menu";
+    moreIcon.title = "More actions";
+    moreIcon.textContent = "⋯";
+    moreIcon.setAttribute("aria-label", "More actions");
+    moreIcon.setAttribute("aria-haspopup", "menu");
+    floating.appendChild(moreIcon);
 
-  cardEl.appendChild(floating);
+    cardEl.appendChild(floating);
+  }
 
   if (originLabel) {
     const origin = document.createElement("span");
