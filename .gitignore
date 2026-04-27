@@ -2,4 +2,7 @@
 
 manifest.json
 
+# AI
 .sisyphus/**/*
+.claude/
+graphify-out/

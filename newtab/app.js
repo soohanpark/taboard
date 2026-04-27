@@ -368,15 +368,21 @@ const deleteCard = ({ cardId }) => {
 const editSpace = ({ spaceId, name }) =>
   updateState((draft) => {
     const space = draft.spaces.find((item) => item.id === spaceId);
-    if (space) space.name = name;
+    if (space) {
+      space.name = name;
+      space.updatedAt = new Date().toISOString();
+    }
   });
 const addSpace = ({ name }) => {
   const spaceId = generateId("space");
   updateState((draft) => {
+    const now = new Date().toISOString();
     draft.spaces.push({
       id: spaceId,
       name,
       accent: getRandomAccent(),
+      createdAt: now,
+      updatedAt: now,
       boards: [],
     });
     draft.preferences.activeSpaceId = spaceId;
@@ -557,7 +563,7 @@ const bootstrap = async () => {
     closeModal,
     resolveCardFavicon,
   });
-  initDriveUI({ findCardContext });
+  initDriveUI();
   subscribe(handleStateChange);
   subscribeDrive(handleDriveUpdate);
   initTabs({ addTabCardToBoard });
@@ -817,7 +823,10 @@ boardEl.addEventListener("focusout", (event) => {
   event.target.textContent = newName;
   updateState((draft) => {
     const board = findBoard(getActiveSpace(draft), boardId);
-    if (board) board.name = newName;
+    if (board) {
+      board.name = newName;
+      board.updatedAt = new Date().toISOString();
+    }
   });
 });
 boardEl.addEventListener("keydown", (event) => {
@@ -1061,9 +1070,12 @@ addColumnBtn?.addEventListener("click", () => {
   updateState((draft) => {
     const active = getActiveSpace(draft);
     if (active) {
+      const now = new Date().toISOString();
       active.boards.push({
         id: newBoardId,
         name: "New board",
+        createdAt: now,
+        updatedAt: now,
         cards: [],
       });
       draft.preferences.activeBoardId = newBoardId;

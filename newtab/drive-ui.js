@@ -89,10 +89,6 @@ const toggleDriveMenu = () => {
   else openDriveMenu();
 };
 
-let driveCallbacks = {
-  findCardContext: () => ({ card: null }),
-};
-
 const acquireSyncMutex = () =>
   new Promise((resolve) => {
     if (!syncInFlight) {
@@ -133,15 +129,15 @@ export const scheduleDriveSync = (
   clearTimeout(driveTimer);
   const executor = async () => {
     try {
-      if (trigger === "add-card") {
-        await runDriveSync({ reason: "add-card", localState: state, meta });
-        return;
-      }
-      await pushToDrive(state);
+      await runDriveSync({
+        reason: trigger === "add-card" ? "add-card" : "debounced",
+        localState: state,
+        meta,
+        throwOnError: immediate,
+      });
       if (immediate) showSnackbar("Google Drive backup complete");
-    } catch (error) {
-      console.error(error);
-      showSnackbar("Drive sync failed: " + error.message);
+    } catch {
+      // runDriveSync handles its own error reporting
     }
   };
 
@@ -152,57 +148,226 @@ export const scheduleDriveSync = (
   }
 };
 
-const mergeAddedCardsIntoRemote = (
-  remoteState,
-  localState,
-  addedCards = [],
+const cloneItem = (item) => JSON.parse(JSON.stringify(item));
+
+const toTime = (value) => {
+  if (!value) return 0;
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? 0 : time;
+};
+
+const getItemTime = (item) =>
+  toTime(item?.updatedAt) || toTime(item?.createdAt);
+
+const getOrderedIds = (
+  remoteItems = [],
+  localItems = [],
+  remoteLastUpdated,
+  localLastUpdated,
 ) => {
-  if (!remoteState || !localState || !Array.isArray(addedCards)) {
-    return remoteState;
+  const remoteIds = (remoteItems ?? []).map((item) => item.id);
+  const localIds = (localItems ?? []).map((item) => item.id);
+  const preferLocalOrder =
+    toTime(localLastUpdated) >= toTime(remoteLastUpdated);
+  const preferred = preferLocalOrder ? localIds : remoteIds;
+  const fallback = preferLocalOrder ? remoteIds : localIds;
+  return [...new Set([...preferred, ...fallback])];
+};
+
+const indexCards = (state) => {
+  const index = new Map();
+  for (const space of state?.spaces ?? []) {
+    for (const board of space?.boards ?? []) {
+      for (const card of board?.cards ?? []) {
+        index.set(card.id, card);
+      }
+    }
+  }
+  return index;
+};
+
+const shouldKeepOneSidedItem = (item, otherSideLastUpdated) => {
+  const itemCreated = toTime(item.createdAt);
+  const otherUpdated = toTime(otherSideLastUpdated);
+  if (!itemCreated || !otherUpdated) return true;
+  return itemCreated >= otherUpdated;
+};
+
+const shouldKeepOneSidedCard = (
+  card,
+  otherSideCard,
+  ownSideLastUpdated,
+  otherSideLastUpdated,
+) => {
+  if (!otherSideCard) {
+    return shouldKeepOneSidedItem(card, otherSideLastUpdated);
   }
 
-  const merged = JSON.parse(JSON.stringify(remoteState));
+  const cardUpdated = getItemTime(card);
+  const otherCardUpdated = getItemTime(otherSideCard);
+  if (cardUpdated !== otherCardUpdated) {
+    return cardUpdated > otherCardUpdated;
+  }
 
-  const remoteHasCard = (cardId) => {
-    if (!cardId) return false;
-    return merged.spaces?.some((space) =>
-      space.boards?.some((board) =>
-        board.cards?.some((card) => card.id === cardId),
-      ),
-    );
-  };
-
-  addedCards.forEach((entry) => {
-    const cardId = entry?.id;
-    if (!cardId || remoteHasCard(cardId)) return;
-
-    const { card } = driveCallbacks.findCardContext(localState, {
-      spaceId: entry.spaceId ?? null,
-      boardId: entry.boardId ?? null,
-      cardId,
-    });
-    if (!card) return;
-
-    let targetSpace =
-      merged.spaces?.find((space) => space.id === entry.spaceId) ??
-      merged.spaces?.[0] ??
-      null;
-    if (!targetSpace) return;
-
-    let targetBoard =
-      targetSpace.boards?.find((board) => board.id === entry.boardId) ??
-      targetSpace.boards?.[0] ??
-      null;
-    if (!targetBoard) return;
-
-    if (!Array.isArray(targetBoard.cards)) {
-      targetBoard.cards = [];
-    }
-    targetBoard.cards.unshift(JSON.parse(JSON.stringify(card)));
-  });
-
-  return merged;
+  return toTime(ownSideLastUpdated) >= toTime(otherSideLastUpdated);
 };
+
+const mergeBoards = (
+  remoteBoards,
+  localBoards,
+  remoteLastUpdated,
+  localLastUpdated,
+  { remoteCardIndex, localCardIndex } = {},
+) => {
+  const remoteBoardMap = new Map((remoteBoards ?? []).map((b) => [b.id, b]));
+  const localBoardMap = new Map((localBoards ?? []).map((b) => [b.id, b]));
+  const allBoardIds = getOrderedIds(
+    remoteBoards,
+    localBoards,
+    remoteLastUpdated,
+    localLastUpdated,
+  );
+
+  return allBoardIds
+    .map((boardId) => {
+      const remote = remoteBoardMap.get(boardId);
+      const local = localBoardMap.get(boardId);
+      if (!remote) {
+        return shouldKeepOneSidedItem(local, remoteLastUpdated)
+          ? cloneItem(local)
+          : null;
+      }
+      if (!local) {
+        return shouldKeepOneSidedItem(remote, localLastUpdated)
+          ? cloneItem(remote)
+          : null;
+      }
+
+      const remoteCardMap = new Map((remote.cards ?? []).map((c) => [c.id, c]));
+      const localCardMap = new Map((local.cards ?? []).map((c) => [c.id, c]));
+      const allCardIds = getOrderedIds(
+        remote.cards,
+        local.cards,
+        remoteLastUpdated,
+        localLastUpdated,
+      );
+
+      const mergedCards = allCardIds
+        .map((cardId) => {
+          const rc = remoteCardMap.get(cardId);
+          const lc = localCardMap.get(cardId);
+          if (!rc) {
+            return shouldKeepOneSidedCard(
+              lc,
+              remoteCardIndex?.get(cardId),
+              localLastUpdated,
+              remoteLastUpdated,
+            )
+              ? cloneItem(lc)
+              : null;
+          }
+          if (!lc) {
+            return shouldKeepOneSidedCard(
+              rc,
+              localCardIndex?.get(cardId),
+              remoteLastUpdated,
+              localLastUpdated,
+            )
+              ? cloneItem(rc)
+              : null;
+          }
+
+          const remoteUpdated = toTime(rc.updatedAt);
+          const localUpdated = toTime(lc.updatedAt);
+          return cloneItem(localUpdated >= remoteUpdated ? lc : rc);
+        })
+        .filter(Boolean);
+
+      const remoteUpdated = toTime(remote.updatedAt);
+      const localUpdated = toTime(local.updatedAt);
+      const base = localUpdated >= remoteUpdated ? local : remote;
+
+      return {
+        ...cloneItem(base),
+        cards: mergedCards,
+      };
+    })
+    .filter(Boolean);
+};
+
+export const mergeStates = (remoteState, localState) => {
+  if (!remoteState || !Array.isArray(remoteState.spaces)) return localState;
+  if (!localState || !Array.isArray(localState.spaces)) return remoteState;
+
+  const remoteSpaceMap = new Map(remoteState.spaces.map((s) => [s.id, s]));
+  const localSpaceMap = new Map(localState.spaces.map((s) => [s.id, s]));
+  const allSpaceIds = getOrderedIds(
+    remoteState.spaces,
+    localState.spaces,
+    remoteState.lastUpdated,
+    localState.lastUpdated,
+  );
+  const remoteCardIndex = indexCards(remoteState);
+  const localCardIndex = indexCards(localState);
+
+  const mergedSpaces = allSpaceIds
+    .map((spaceId) => {
+      const remote = remoteSpaceMap.get(spaceId);
+      const local = localSpaceMap.get(spaceId);
+      if (!remote) {
+        return shouldKeepOneSidedItem(local, remoteState.lastUpdated)
+          ? cloneItem(local)
+          : null;
+      }
+      if (!local) {
+        return shouldKeepOneSidedItem(remote, localState.lastUpdated)
+          ? cloneItem(remote)
+          : null;
+      }
+
+      const mergedBoards = mergeBoards(
+        remote.boards,
+        local.boards,
+        remoteState.lastUpdated,
+        localState.lastUpdated,
+        { remoteCardIndex, localCardIndex },
+      );
+
+      const remoteSpaceTime = toTime(remote.updatedAt);
+      const localSpaceTime = toTime(local.updatedAt);
+      const baseSpace = localSpaceTime >= remoteSpaceTime ? local : remote;
+
+      return {
+        ...cloneItem(baseSpace),
+        boards: mergedBoards,
+      };
+    })
+    .filter(Boolean);
+
+  const remoteTime = toTime(remoteState.lastUpdated);
+  const localTime = toTime(localState.lastUpdated);
+  const newerState = localTime >= remoteTime ? localState : remoteState;
+
+  return {
+    ...cloneItem(newerState),
+    spaces: mergedSpaces,
+    lastUpdated: new Date(
+      Math.max(remoteTime, localTime) || Date.now(),
+    ).toISOString(),
+  };
+};
+
+export const shouldRethrowSyncError = (
+  error,
+  { reason = "interval", throwOnError = false } = {},
+) =>
+  Boolean(
+    error &&
+    (throwOnError ||
+      reason === "manual" ||
+      reason === "add-card" ||
+      reason === "connect"),
+  );
 
 const runDriveSync = async ({
   reason = "interval",
@@ -227,35 +392,22 @@ const runDriveSync = async ({
 
   await acquireSyncMutex();
 
-  let lockReleased = false;
-  const releaseLock = () => {
-    if (lockReleased) return;
-    lockReleased = true;
-    releaseSyncMutex();
-  };
-
-  let timedOut = false;
   const syncAbortController = new AbortController();
   const timeoutId = setTimeout(() => {
-    timedOut = true;
-    console.error("Drive sync timed out after 30s");
     syncAbortController.abort();
-    releaseLock();
   }, 30000);
 
   try {
-    if (timedOut) {
-      return;
-    }
+    const isBackground = reason === "interval" || reason === "newtab";
+    const syncOptions = {
+      signal: syncAbortController.signal,
+      allowInteractive: !isBackground,
+    };
 
     const remoteState = await pullFromDrive({
       markChecked: reason === "newtab",
-      signal: syncAbortController.signal,
+      ...syncOptions,
     });
-
-    if (timedOut) {
-      return;
-    }
 
     const resolvedLocalState = localState ?? getState();
 
@@ -266,48 +418,30 @@ const runDriveSync = async ({
       return;
     }
 
-    const remoteTime = remoteState?.lastUpdated
-      ? new Date(remoteState.lastUpdated).getTime()
-      : 0;
-    const localTime = resolvedLocalState?.lastUpdated
-      ? new Date(resolvedLocalState.lastUpdated).getTime()
-      : 0;
-    if (remoteState && remoteTime > localTime) {
-      if (reason === "add-card" && meta?.addedCards?.length) {
-        const mergedState = mergeAddedCardsIntoRemote(
-          remoteState,
-          resolvedLocalState,
-          meta.addedCards,
-        );
-        isDriveSyncSuppressed = true;
-        replaceState(mergedState);
-        isDriveSyncSuppressed = false;
-        await pushToDrive(mergedState, {
-          signal: syncAbortController.signal,
-        });
-      } else {
-        isDriveSyncSuppressed = true;
-        replaceState(remoteState, { preserveTimestamp: true });
-        isDriveSyncSuppressed = false;
-      }
-    } else {
-      await pushToDrive(resolvedLocalState, {
-        signal: syncAbortController.signal,
-      });
+    const mergedState = mergeStates(remoteState, resolvedLocalState);
+    const hasChanges =
+      JSON.stringify(mergedState) !== JSON.stringify(resolvedLocalState);
+
+    if (hasChanges) {
+      isDriveSyncSuppressed = true;
+      replaceState(mergedState);
+      isDriveSyncSuppressed = false;
     }
+    await pushToDrive(getState(), syncOptions);
   } catch (error) {
-    console.error("Google Drive sync failed", error);
-    if (
-      throwOnError ||
-      reason === "manual" ||
-      reason === "add-card" ||
-      reason === "connect"
-    ) {
+    if (error?.name === "AbortError") {
+      showSnackbar("Drive sync timed out. Will retry later.");
+      if (shouldRethrowSyncError(error, { reason, throwOnError })) {
+        throw error;
+      }
+      return;
+    }
+    if (shouldRethrowSyncError(error, { reason, throwOnError })) {
       throw error;
     }
   } finally {
     clearTimeout(timeoutId);
-    releaseLock();
+    releaseSyncMutex();
   }
 };
 
@@ -353,12 +487,7 @@ export const handleDriveUpdate = (snapshot) => {
   }
 };
 
-export const initDriveUI = (callbacks = {}) => {
-  driveCallbacks = {
-    ...driveCallbacks,
-    ...callbacks,
-  };
-
+export const initDriveUI = () => {
   if (initialized) return;
   initialized = true;
 
@@ -375,9 +504,8 @@ export const initDriveUI = (callbacks = {}) => {
         try {
           await runDriveSync({ reason: "connect" });
           hasPulledDriveState = true;
-        } catch (error) {
-          console.error("Failed to pull Drive data", error);
-          showSnackbar("Failed to load Drive data: " + error.message);
+        } catch {
+          // pull failure already reported via showSnackbar in pullFromDrive
         }
       }
       showSnackbar("Connected to Google Drive.");
