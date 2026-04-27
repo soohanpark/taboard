@@ -69,7 +69,12 @@ export const scheduleDriveSync = (
   clearTimeout(driveTimer);
   const executor = async () => {
     try {
-      await runDriveSync({ reason: "debounced", localState: state, meta });
+      await runDriveSync({
+        reason: trigger === "add-card" ? "add-card" : "debounced",
+        localState: state,
+        meta,
+        throwOnError: immediate,
+      });
       if (immediate) showSnackbar("Google Drive backup complete");
     } catch {
       // runDriveSync handles its own error reporting
@@ -83,13 +88,68 @@ export const scheduleDriveSync = (
   }
 };
 
+const cloneItem = (item) => JSON.parse(JSON.stringify(item));
+
+const toTime = (value) => {
+  if (!value) return 0;
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? 0 : time;
+};
+
+const getItemTime = (item) =>
+  toTime(item?.updatedAt) || toTime(item?.createdAt);
+
+const getOrderedIds = (
+  remoteItems = [],
+  localItems = [],
+  remoteLastUpdated,
+  localLastUpdated,
+) => {
+  const remoteIds = (remoteItems ?? []).map((item) => item.id);
+  const localIds = (localItems ?? []).map((item) => item.id);
+  const preferLocalOrder =
+    toTime(localLastUpdated) >= toTime(remoteLastUpdated);
+  const preferred = preferLocalOrder ? localIds : remoteIds;
+  const fallback = preferLocalOrder ? remoteIds : localIds;
+  return [...new Set([...preferred, ...fallback])];
+};
+
+const indexCards = (state) => {
+  const index = new Map();
+  for (const space of state?.spaces ?? []) {
+    for (const board of space?.boards ?? []) {
+      for (const card of board?.cards ?? []) {
+        index.set(card.id, card);
+      }
+    }
+  }
+  return index;
+};
+
 const shouldKeepOneSidedItem = (item, otherSideLastUpdated) => {
-  const itemCreated = item.createdAt ? new Date(item.createdAt).getTime() : 0;
-  const otherUpdated = otherSideLastUpdated
-    ? new Date(otherSideLastUpdated).getTime()
-    : 0;
+  const itemCreated = toTime(item.createdAt);
+  const otherUpdated = toTime(otherSideLastUpdated);
   if (!itemCreated || !otherUpdated) return true;
   return itemCreated >= otherUpdated;
+};
+
+const shouldKeepOneSidedCard = (
+  card,
+  otherSideCard,
+  ownSideLastUpdated,
+  otherSideLastUpdated,
+) => {
+  if (!otherSideCard) {
+    return shouldKeepOneSidedItem(card, otherSideLastUpdated);
+  }
+
+  const cardUpdated = getItemTime(card);
+  const otherCardUpdated = getItemTime(otherSideCard);
+  if (cardUpdated !== otherCardUpdated) {
+    return cardUpdated > otherCardUpdated;
+  }
+
+  return toTime(ownSideLastUpdated) >= toTime(otherSideLastUpdated);
 };
 
 const mergeBoards = (
@@ -97,12 +157,16 @@ const mergeBoards = (
   localBoards,
   remoteLastUpdated,
   localLastUpdated,
+  { remoteCardIndex, localCardIndex } = {},
 ) => {
   const remoteBoardMap = new Map((remoteBoards ?? []).map((b) => [b.id, b]));
   const localBoardMap = new Map((localBoards ?? []).map((b) => [b.id, b]));
-  const allBoardIds = [
-    ...new Set([...remoteBoardMap.keys(), ...localBoardMap.keys()]),
-  ];
+  const allBoardIds = getOrderedIds(
+    remoteBoards,
+    localBoards,
+    remoteLastUpdated,
+    localLastUpdated,
+  );
 
   return allBoardIds
     .map((boardId) => {
@@ -110,73 +174,81 @@ const mergeBoards = (
       const local = localBoardMap.get(boardId);
       if (!remote) {
         return shouldKeepOneSidedItem(local, remoteLastUpdated)
-          ? JSON.parse(JSON.stringify(local))
+          ? cloneItem(local)
           : null;
       }
       if (!local) {
         return shouldKeepOneSidedItem(remote, localLastUpdated)
-          ? JSON.parse(JSON.stringify(remote))
+          ? cloneItem(remote)
           : null;
       }
 
       const remoteCardMap = new Map((remote.cards ?? []).map((c) => [c.id, c]));
       const localCardMap = new Map((local.cards ?? []).map((c) => [c.id, c]));
-      const allCardIds = [
-        ...new Set([...remoteCardMap.keys(), ...localCardMap.keys()]),
-      ];
+      const allCardIds = getOrderedIds(
+        remote.cards,
+        local.cards,
+        remoteLastUpdated,
+        localLastUpdated,
+      );
 
       const mergedCards = allCardIds
         .map((cardId) => {
           const rc = remoteCardMap.get(cardId);
           const lc = localCardMap.get(cardId);
           if (!rc) {
-            return shouldKeepOneSidedItem(lc, remoteLastUpdated)
-              ? JSON.parse(JSON.stringify(lc))
+            return shouldKeepOneSidedCard(
+              lc,
+              remoteCardIndex?.get(cardId),
+              localLastUpdated,
+              remoteLastUpdated,
+            )
+              ? cloneItem(lc)
               : null;
           }
           if (!lc) {
-            return shouldKeepOneSidedItem(rc, localLastUpdated)
-              ? JSON.parse(JSON.stringify(rc))
+            return shouldKeepOneSidedCard(
+              rc,
+              localCardIndex?.get(cardId),
+              remoteLastUpdated,
+              localLastUpdated,
+            )
+              ? cloneItem(rc)
               : null;
           }
 
-          const remoteUpdated = rc.updatedAt
-            ? new Date(rc.updatedAt).getTime()
-            : 0;
-          const localUpdated = lc.updatedAt
-            ? new Date(lc.updatedAt).getTime()
-            : 0;
-          return JSON.parse(
-            JSON.stringify(localUpdated >= remoteUpdated ? lc : rc),
-          );
+          const remoteUpdated = toTime(rc.updatedAt);
+          const localUpdated = toTime(lc.updatedAt);
+          return cloneItem(localUpdated >= remoteUpdated ? lc : rc);
         })
         .filter(Boolean);
 
-      const remoteUpdated = remote.updatedAt
-        ? new Date(remote.updatedAt).getTime()
-        : 0;
-      const localUpdated = local.updatedAt
-        ? new Date(local.updatedAt).getTime()
-        : 0;
+      const remoteUpdated = toTime(remote.updatedAt);
+      const localUpdated = toTime(local.updatedAt);
       const base = localUpdated >= remoteUpdated ? local : remote;
 
       return {
-        ...JSON.parse(JSON.stringify(base)),
+        ...cloneItem(base),
         cards: mergedCards,
       };
     })
     .filter(Boolean);
 };
 
-const mergeStates = (remoteState, localState) => {
+export const mergeStates = (remoteState, localState) => {
   if (!remoteState || !Array.isArray(remoteState.spaces)) return localState;
   if (!localState || !Array.isArray(localState.spaces)) return remoteState;
 
   const remoteSpaceMap = new Map(remoteState.spaces.map((s) => [s.id, s]));
   const localSpaceMap = new Map(localState.spaces.map((s) => [s.id, s]));
-  const allSpaceIds = [
-    ...new Set([...remoteSpaceMap.keys(), ...localSpaceMap.keys()]),
-  ];
+  const allSpaceIds = getOrderedIds(
+    remoteState.spaces,
+    localState.spaces,
+    remoteState.lastUpdated,
+    localState.lastUpdated,
+  );
+  const remoteCardIndex = indexCards(remoteState);
+  const localCardIndex = indexCards(localState);
 
   const mergedSpaces = allSpaceIds
     .map((spaceId) => {
@@ -184,12 +256,12 @@ const mergeStates = (remoteState, localState) => {
       const local = localSpaceMap.get(spaceId);
       if (!remote) {
         return shouldKeepOneSidedItem(local, remoteState.lastUpdated)
-          ? JSON.parse(JSON.stringify(local))
+          ? cloneItem(local)
           : null;
       }
       if (!local) {
         return shouldKeepOneSidedItem(remote, localState.lastUpdated)
-          ? JSON.parse(JSON.stringify(remote))
+          ? cloneItem(remote)
           : null;
       }
 
@@ -198,39 +270,44 @@ const mergeStates = (remoteState, localState) => {
         local.boards,
         remoteState.lastUpdated,
         localState.lastUpdated,
+        { remoteCardIndex, localCardIndex },
       );
 
-      const remoteSpaceTime = remote.updatedAt
-        ? new Date(remote.updatedAt).getTime()
-        : 0;
-      const localSpaceTime = local.updatedAt
-        ? new Date(local.updatedAt).getTime()
-        : 0;
+      const remoteSpaceTime = toTime(remote.updatedAt);
+      const localSpaceTime = toTime(local.updatedAt);
       const baseSpace = localSpaceTime >= remoteSpaceTime ? local : remote;
 
       return {
-        ...JSON.parse(JSON.stringify(baseSpace)),
+        ...cloneItem(baseSpace),
         boards: mergedBoards,
       };
     })
     .filter(Boolean);
 
-  const remoteTime = remoteState.lastUpdated
-    ? new Date(remoteState.lastUpdated).getTime()
-    : 0;
-  const localTime = localState.lastUpdated
-    ? new Date(localState.lastUpdated).getTime()
-    : 0;
+  const remoteTime = toTime(remoteState.lastUpdated);
+  const localTime = toTime(localState.lastUpdated);
   const newerState = localTime >= remoteTime ? localState : remoteState;
 
   return {
-    ...JSON.parse(JSON.stringify(newerState)),
+    ...cloneItem(newerState),
     spaces: mergedSpaces,
     lastUpdated: new Date(
       Math.max(remoteTime, localTime) || Date.now(),
     ).toISOString(),
   };
 };
+
+export const shouldRethrowSyncError = (
+  error,
+  { reason = "interval", throwOnError = false } = {},
+) =>
+  Boolean(
+    error &&
+    (throwOnError ||
+      reason === "manual" ||
+      reason === "add-card" ||
+      reason === "connect"),
+  );
 
 const runDriveSync = async ({
   reason = "interval",
@@ -294,14 +371,12 @@ const runDriveSync = async ({
   } catch (error) {
     if (error?.name === "AbortError") {
       showSnackbar("Drive sync timed out. Will retry later.");
+      if (shouldRethrowSyncError(error, { reason, throwOnError })) {
+        throw error;
+      }
       return;
     }
-    if (
-      throwOnError ||
-      reason === "manual" ||
-      reason === "add-card" ||
-      reason === "connect"
-    ) {
+    if (shouldRethrowSyncError(error, { reason, throwOnError })) {
       throw error;
     }
   } finally {
