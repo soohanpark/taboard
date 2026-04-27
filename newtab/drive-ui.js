@@ -60,10 +60,13 @@ const refreshDriveStatusFromState = () => {
 };
 
 const recordSyncTimestamp = () => {
+  // Suppress sync to avoid an extra Drive push triggered just by the timestamp bump.
+  isDriveSyncSuppressed = true;
   updateState((draft) => {
     if (!draft.preferences) draft.preferences = {};
     draft.preferences.lastSyncAt = Date.now();
   });
+  isDriveSyncSuppressed = false;
   refreshDriveStatusFromState();
 };
 

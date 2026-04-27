@@ -232,10 +232,6 @@ export const renderCardActionMenu = (cardEl, card, options = {}) => {
   closeCardActionMenu();
   if (!cardEl) return;
 
-  const menu = document.createElement("div");
-  menu.className = "card-action-menu";
-  menu.setAttribute("role", "menu");
-
   const items = [];
   if (!options.hideEdit) {
     items.push({ action: "edit", label: "Edit" });
@@ -244,9 +240,15 @@ export const renderCardActionMenu = (cardEl, card, options = {}) => {
     items.push({ action: "open", label: "Open in new tab" });
   }
   if (!options.hideDelete) {
-    items.push({ separator: true });
+    if (items.length) items.push({ separator: true });
     items.push({ action: "delete", label: "Delete", danger: true });
   }
+  // Don't render an empty popover (e.g. Favorites read-only non-link card).
+  if (!items.some((item) => !item.separator)) return;
+
+  const menu = document.createElement("div");
+  menu.className = "card-action-menu";
+  menu.setAttribute("role", "menu");
 
   items.forEach((item) => {
     if (item.separator) {

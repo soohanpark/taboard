@@ -87,7 +87,6 @@ const boardSidebarListEl = document.getElementById("board-sidebar-list");
 const boardSidebarEl = document.getElementById("board-sidebar");
 const sidebarToggleBtn = document.getElementById("sidebar-toggle");
 const sidebarExpandBtn = document.getElementById("sidebar-expand");
-const searchControl = document.getElementById("search-control");
 const searchInput = document.getElementById("search-input");
 const searchFocusBtn = document.getElementById("search-focus");
 const searchClearBtn = document.getElementById("search-clear");
