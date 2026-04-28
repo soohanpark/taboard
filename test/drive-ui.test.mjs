@@ -132,6 +132,111 @@ describe("Drive state merging", () => {
     );
   });
 
+  test("keeps a card edited on one side over deletion on the other", () => {
+    const remote = state(
+      [board("board-a", [], "2026-04-20T00:00:00.000Z")],
+      "2026-04-20T00:00:00.000Z",
+    );
+    const local = state(
+      [
+        board(
+          "board-a",
+          [
+            card("card-1", "2026-04-21T00:00:00.000Z", {
+              createdAt: "2026-01-01T00:00:00.000Z",
+            }),
+          ],
+          "2026-04-21T00:00:00.000Z",
+        ),
+      ],
+      "2026-04-21T00:00:00.000Z",
+    );
+
+    const merged = driveUi.mergeStates(remote, local);
+
+    assert.deepEqual(
+      merged.spaces[0].boards[0].cards.map((c) => c.id),
+      ["card-1"],
+      "card edited locally after remote-side deletion must survive",
+    );
+  });
+
+  test("connect-time merge preserves local-only data", () => {
+    // First-connect scenario: remote Drive has data from Device A,
+    // local has unsaved data on Device B. Old code replaceState(remote)
+    // silently destroyed local. New flow must keep both.
+    const remote = state(
+      [
+        board("board-remote", [
+          card("card-remote", "2026-04-20T00:00:00.000Z"),
+        ]),
+      ],
+      "2026-04-20T00:00:00.000Z",
+    );
+    remote.spaces[0].id = "space-remote";
+
+    const local = state(
+      [board("board-local", [card("card-local", "2026-04-22T00:00:00.000Z")])],
+      "2026-04-22T00:00:00.000Z",
+    );
+    local.spaces[0].id = "space-local";
+
+    const merged = driveUi.mergeStates(remote, local, { keepOneSided: true });
+    const spaceIds = merged.spaces.map((s) => s.id).sort();
+    assert.deepEqual(spaceIds, ["space-local", "space-remote"]);
+  });
+
+  test("a remote board reorder survives a local-only preference bump", () => {
+    // Remote: boards reordered to [b, a] at 2026-04-22 (board.updatedAt set).
+    // Local: still [a, b] at older timestamps, but state.lastUpdated bumped
+    // to 2026-04-23 because user toggled tabDrawerPinned (preference-only).
+    const remote = state(
+      [
+        board("board-b", [], "2026-04-22T00:00:00.000Z"),
+        board("board-a", [], "2026-04-22T00:00:00.000Z"),
+      ],
+      "2026-04-22T00:00:00.000Z",
+    );
+    remote.spaces[0].updatedAt = "2026-04-22T00:00:00.000Z";
+
+    const local = state(
+      [
+        board("board-a", [], "2026-04-20T00:00:00.000Z"),
+        board("board-b", [], "2026-04-20T00:00:00.000Z"),
+      ],
+      "2026-04-23T00:00:00.000Z",
+    );
+    local.spaces[0].updatedAt = "2026-04-20T00:00:00.000Z";
+
+    const merged = driveUi.mergeStates(remote, local);
+    assert.deepEqual(
+      merged.spaces[0].boards.map((b) => b.id),
+      ["board-b", "board-a"],
+      "remote reorder must win when only local-state.lastUpdated changed",
+    );
+  });
+
+  test("favorite toggled on one side beats stale edit on the other", () => {
+    const localCard = card("card-1", "2026-04-22T00:00:00.000Z", {
+      favorite: true,
+    });
+    const remoteCard = card("card-1", "2026-04-21T00:00:00.000Z", {
+      title: "Older title",
+    });
+    const remote = state(
+      [board("board-a", [remoteCard], "2026-04-21T00:00:00.000Z")],
+      "2026-04-21T00:00:00.000Z",
+    );
+    const local = state(
+      [board("board-a", [localCard], "2026-04-22T00:00:00.000Z")],
+      "2026-04-22T00:00:00.000Z",
+    );
+
+    const merged = driveUi.mergeStates(remote, local);
+    assert.equal(merged.spaces[0].boards[0].cards[0].favorite, true);
+    assert.equal(merged.spaces[0].boards[0].cards[0].title, "card-1");
+  });
+
   test("keeps the newer local board and space order", () => {
     assert.equal(typeof driveUi.mergeStates, "function");
 

@@ -167,16 +167,32 @@ const toTime = (value) => {
 const getItemTime = (item) =>
   toTime(item?.updatedAt) || toTime(item?.createdAt);
 
+const maxItemTime = (items = []) => {
+  let max = 0;
+  for (const item of items ?? []) {
+    const t = getItemTime(item);
+    if (t > max) max = t;
+  }
+  return max;
+};
+
+// Ordering precedence comes from the *container that owns the order*
+// (board.updatedAt for cards, space.updatedAt for boards). When no
+// single container timestamp is available — e.g. comparing top-level
+// spaces — fall back to the freshest item timestamp on each side.
+// Whole-state lastUpdated is unsafe here because it bumps on unrelated
+// preference writes (searchTerm, tabDrawerPinned, lastSyncAt).
 const getOrderedIds = (
   remoteItems = [],
   localItems = [],
-  remoteLastUpdated,
-  localLastUpdated,
+  remoteContainerUpdated,
+  localContainerUpdated,
 ) => {
   const remoteIds = (remoteItems ?? []).map((item) => item.id);
   const localIds = (localItems ?? []).map((item) => item.id);
-  const preferLocalOrder =
-    toTime(localLastUpdated) >= toTime(remoteLastUpdated);
+  const remoteRank = toTime(remoteContainerUpdated) || maxItemTime(remoteItems);
+  const localRank = toTime(localContainerUpdated) || maxItemTime(localItems);
+  const preferLocalOrder = localRank >= remoteRank;
   const preferred = preferLocalOrder ? localIds : remoteIds;
   const fallback = preferLocalOrder ? remoteIds : localIds;
   return [...new Set([...preferred, ...fallback])];
@@ -194,11 +210,16 @@ const indexCards = (state) => {
   return index;
 };
 
-const shouldKeepOneSidedItem = (item, otherSideLastUpdated) => {
-  const itemCreated = toTime(item.createdAt);
+const shouldKeepOneSidedItem = (
+  item,
+  otherSideLastUpdated,
+  { keepOneSided = false } = {},
+) => {
+  if (keepOneSided) return true;
+  const itemTime = getItemTime(item);
   const otherUpdated = toTime(otherSideLastUpdated);
-  if (!itemCreated || !otherUpdated) return true;
-  return itemCreated >= otherUpdated;
+  if (!itemTime || !otherUpdated) return true;
+  return itemTime >= otherUpdated;
 };
 
 const shouldKeepOneSidedCard = (
@@ -206,9 +227,10 @@ const shouldKeepOneSidedCard = (
   otherSideCard,
   ownSideLastUpdated,
   otherSideLastUpdated,
+  options = {},
 ) => {
   if (!otherSideCard) {
-    return shouldKeepOneSidedItem(card, otherSideLastUpdated);
+    return shouldKeepOneSidedItem(card, otherSideLastUpdated, options);
   }
 
   const cardUpdated = getItemTime(card);
@@ -221,19 +243,19 @@ const shouldKeepOneSidedCard = (
 };
 
 const mergeBoards = (
-  remoteBoards,
-  localBoards,
-  remoteLastUpdated,
-  localLastUpdated,
-  { remoteCardIndex, localCardIndex } = {},
+  remoteSpace,
+  localSpace,
+  { remoteCardIndex, localCardIndex, keepOneSided = false } = {},
 ) => {
-  const remoteBoardMap = new Map((remoteBoards ?? []).map((b) => [b.id, b]));
-  const localBoardMap = new Map((localBoards ?? []).map((b) => [b.id, b]));
+  const remoteBoards = remoteSpace?.boards ?? [];
+  const localBoards = localSpace?.boards ?? [];
+  const remoteBoardMap = new Map(remoteBoards.map((b) => [b.id, b]));
+  const localBoardMap = new Map(localBoards.map((b) => [b.id, b]));
   const allBoardIds = getOrderedIds(
     remoteBoards,
     localBoards,
-    remoteLastUpdated,
-    localLastUpdated,
+    remoteSpace?.updatedAt,
+    localSpace?.updatedAt,
   );
 
   return allBoardIds
@@ -241,12 +263,16 @@ const mergeBoards = (
       const remote = remoteBoardMap.get(boardId);
       const local = localBoardMap.get(boardId);
       if (!remote) {
-        return shouldKeepOneSidedItem(local, remoteLastUpdated)
+        return shouldKeepOneSidedItem(local, remoteSpace?.updatedAt, {
+          keepOneSided,
+        })
           ? cloneItem(local)
           : null;
       }
       if (!local) {
-        return shouldKeepOneSidedItem(remote, localLastUpdated)
+        return shouldKeepOneSidedItem(remote, localSpace?.updatedAt, {
+          keepOneSided,
+        })
           ? cloneItem(remote)
           : null;
       }
@@ -256,8 +282,8 @@ const mergeBoards = (
       const allCardIds = getOrderedIds(
         remote.cards,
         local.cards,
-        remoteLastUpdated,
-        localLastUpdated,
+        remote.updatedAt,
+        local.updatedAt,
       );
 
       const mergedCards = allCardIds
@@ -268,8 +294,9 @@ const mergeBoards = (
             return shouldKeepOneSidedCard(
               lc,
               remoteCardIndex?.get(cardId),
-              localLastUpdated,
-              remoteLastUpdated,
+              local.updatedAt,
+              remote.updatedAt,
+              { keepOneSided },
             )
               ? cloneItem(lc)
               : null;
@@ -278,8 +305,9 @@ const mergeBoards = (
             return shouldKeepOneSidedCard(
               rc,
               localCardIndex?.get(cardId),
-              remoteLastUpdated,
-              localLastUpdated,
+              remote.updatedAt,
+              local.updatedAt,
+              { keepOneSided },
             )
               ? cloneItem(rc)
               : null;
@@ -303,43 +331,58 @@ const mergeBoards = (
     .filter(Boolean);
 };
 
-export const mergeStates = (remoteState, localState) => {
+export const mergeStates = (
+  remoteState,
+  localState,
+  { keepOneSided = false } = {},
+) => {
   if (!remoteState || !Array.isArray(remoteState.spaces)) return localState;
   if (!localState || !Array.isArray(localState.spaces)) return remoteState;
 
   const remoteSpaceMap = new Map(remoteState.spaces.map((s) => [s.id, s]));
   const localSpaceMap = new Map(localState.spaces.map((s) => [s.id, s]));
+  // No single container owns the space-list ordering, so getOrderedIds will
+  // fall back to maxItemTime() — i.e. whichever side has the freshest space
+  // wins the order tie. That avoids using state.lastUpdated, which moves
+  // for unrelated preference writes.
   const allSpaceIds = getOrderedIds(
     remoteState.spaces,
     localState.spaces,
-    remoteState.lastUpdated,
-    localState.lastUpdated,
+    undefined,
+    undefined,
   );
   const remoteCardIndex = indexCards(remoteState);
   const localCardIndex = indexCards(localState);
+  // For the one-sided space case we still need a "freshest known activity"
+  // signal on the missing side — the freshest space.updatedAt is the closest
+  // safe proxy.
+  const remoteSpacesPeak = maxItemTime(remoteState.spaces);
+  const localSpacesPeak = maxItemTime(localState.spaces);
 
   const mergedSpaces = allSpaceIds
     .map((spaceId) => {
       const remote = remoteSpaceMap.get(spaceId);
       const local = localSpaceMap.get(spaceId);
       if (!remote) {
-        return shouldKeepOneSidedItem(local, remoteState.lastUpdated)
+        return shouldKeepOneSidedItem(local, remoteSpacesPeak, {
+          keepOneSided,
+        })
           ? cloneItem(local)
           : null;
       }
       if (!local) {
-        return shouldKeepOneSidedItem(remote, localState.lastUpdated)
+        return shouldKeepOneSidedItem(remote, localSpacesPeak, {
+          keepOneSided,
+        })
           ? cloneItem(remote)
           : null;
       }
 
-      const mergedBoards = mergeBoards(
-        remote.boards,
-        local.boards,
-        remoteState.lastUpdated,
-        localState.lastUpdated,
-        { remoteCardIndex, localCardIndex },
-      );
+      const mergedBoards = mergeBoards(remote, local, {
+        remoteCardIndex,
+        localCardIndex,
+        keepOneSided,
+      });
 
       const remoteSpaceTime = toTime(remote.updatedAt);
       const localSpaceTime = toTime(local.updatedAt);
@@ -419,14 +462,13 @@ const runDriveSync = async ({
 
     const resolvedLocalState = localState ?? getState();
 
-    if (reason === "connect" && remoteState) {
-      isDriveSyncSuppressed = true;
-      replaceState(remoteState, { preserveTimestamp: true });
-      isDriveSyncSuppressed = false;
-      return;
-    }
-
-    const mergedState = mergeStates(remoteState, resolvedLocalState);
+    // First connect has no shared deletion horizon: neither side can have
+    // "deleted" the other's items because they have never met before.
+    // Force keepOneSided to avoid silently dropping local data when the
+    // user connects to a Drive that already has data from another device.
+    const mergedState = mergeStates(remoteState, resolvedLocalState, {
+      keepOneSided: reason === "connect",
+    });
     const hasChanges =
       JSON.stringify(mergedState) !== JSON.stringify(resolvedLocalState);
 
@@ -436,6 +478,7 @@ const runDriveSync = async ({
       isDriveSyncSuppressed = false;
     }
     await pushToDrive(getState(), syncOptions);
+    recordSyncTimestamp();
   } catch (error) {
     if (error?.name === "AbortError") {
       showSnackbar("Drive sync timed out. Will retry later.");
@@ -518,7 +561,6 @@ export const initDriveUI = () => {
       }
       showSnackbar("Connected to Google Drive.");
       scheduleDriveSync(getState(), { immediate: true });
-      recordSyncTimestamp();
     } catch (error) {
       showSnackbar("Failed to connect to Drive: " + error.message);
     }
@@ -549,7 +591,6 @@ export const initDriveUI = () => {
     try {
       await runDriveSync({ reason: "manual" });
       showSnackbar("Manual sync with Drive completed.");
-      recordSyncTimestamp();
     } catch (error) {
       showSnackbar("Drive sync failed: " + error.message);
       setDriveStatusText("Sync failed — try again");
