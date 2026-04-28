@@ -166,7 +166,11 @@ describe("Drive state merging", () => {
     // local has unsaved data on Device B. Old code replaceState(remote)
     // silently destroyed local. New flow must keep both.
     const remote = state(
-      [board("board-remote", [card("card-remote", "2026-04-20T00:00:00.000Z")])],
+      [
+        board("board-remote", [
+          card("card-remote", "2026-04-20T00:00:00.000Z"),
+        ]),
+      ],
       "2026-04-20T00:00:00.000Z",
     );
     remote.spaces[0].id = "space-remote";

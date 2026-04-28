@@ -190,8 +190,7 @@ const getOrderedIds = (
 ) => {
   const remoteIds = (remoteItems ?? []).map((item) => item.id);
   const localIds = (localItems ?? []).map((item) => item.id);
-  const remoteRank =
-    toTime(remoteContainerUpdated) || maxItemTime(remoteItems);
+  const remoteRank = toTime(remoteContainerUpdated) || maxItemTime(remoteItems);
   const localRank = toTime(localContainerUpdated) || maxItemTime(localItems);
   const preferLocalOrder = localRank >= remoteRank;
   const preferred = preferLocalOrder ? localIds : remoteIds;
