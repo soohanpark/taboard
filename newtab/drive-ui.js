@@ -195,10 +195,10 @@ const indexCards = (state) => {
 };
 
 const shouldKeepOneSidedItem = (item, otherSideLastUpdated) => {
-  const itemCreated = toTime(item.createdAt);
+  const itemTime = getItemTime(item);
   const otherUpdated = toTime(otherSideLastUpdated);
-  if (!itemCreated || !otherUpdated) return true;
-  return itemCreated >= otherUpdated;
+  if (!itemTime || !otherUpdated) return true;
+  return itemTime >= otherUpdated;
 };
 
 const shouldKeepOneSidedCard = (

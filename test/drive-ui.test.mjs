@@ -132,6 +132,35 @@ describe("Drive state merging", () => {
     );
   });
 
+  test("keeps a card edited on one side over deletion on the other", () => {
+    const remote = state(
+      [board("board-a", [], "2026-04-20T00:00:00.000Z")],
+      "2026-04-20T00:00:00.000Z",
+    );
+    const local = state(
+      [
+        board(
+          "board-a",
+          [
+            card("card-1", "2026-04-21T00:00:00.000Z", {
+              createdAt: "2026-01-01T00:00:00.000Z",
+            }),
+          ],
+          "2026-04-21T00:00:00.000Z",
+        ),
+      ],
+      "2026-04-21T00:00:00.000Z",
+    );
+
+    const merged = driveUi.mergeStates(remote, local);
+
+    assert.deepEqual(
+      merged.spaces[0].boards[0].cards.map((c) => c.id),
+      ["card-1"],
+      "card edited locally after remote-side deletion must survive",
+    );
+  });
+
   test("keeps the newer local board and space order", () => {
     assert.equal(typeof driveUi.mergeStates, "function");
 
