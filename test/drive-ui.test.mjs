@@ -161,6 +161,27 @@ describe("Drive state merging", () => {
     );
   });
 
+  test("connect-time merge preserves local-only data", () => {
+    // First-connect scenario: remote Drive has data from Device A,
+    // local has unsaved data on Device B. Old code replaceState(remote)
+    // silently destroyed local. New flow must keep both.
+    const remote = state(
+      [board("board-remote", [card("card-remote", "2026-04-20T00:00:00.000Z")])],
+      "2026-04-20T00:00:00.000Z",
+    );
+    remote.spaces[0].id = "space-remote";
+
+    const local = state(
+      [board("board-local", [card("card-local", "2026-04-22T00:00:00.000Z")])],
+      "2026-04-22T00:00:00.000Z",
+    );
+    local.spaces[0].id = "space-local";
+
+    const merged = driveUi.mergeStates(remote, local, { keepOneSided: true });
+    const spaceIds = merged.spaces.map((s) => s.id).sort();
+    assert.deepEqual(spaceIds, ["space-local", "space-remote"]);
+  });
+
   test("a remote board reorder survives a local-only preference bump", () => {
     // Remote: boards reordered to [b, a] at 2026-04-22 (board.updatedAt set).
     // Local: still [a, b] at older timestamps, but state.lastUpdated bumped

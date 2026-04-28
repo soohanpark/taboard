@@ -211,7 +211,12 @@ const indexCards = (state) => {
   return index;
 };
 
-const shouldKeepOneSidedItem = (item, otherSideLastUpdated) => {
+const shouldKeepOneSidedItem = (
+  item,
+  otherSideLastUpdated,
+  { keepOneSided = false } = {},
+) => {
+  if (keepOneSided) return true;
   const itemTime = getItemTime(item);
   const otherUpdated = toTime(otherSideLastUpdated);
   if (!itemTime || !otherUpdated) return true;
@@ -223,9 +228,10 @@ const shouldKeepOneSidedCard = (
   otherSideCard,
   ownSideLastUpdated,
   otherSideLastUpdated,
+  options = {},
 ) => {
   if (!otherSideCard) {
-    return shouldKeepOneSidedItem(card, otherSideLastUpdated);
+    return shouldKeepOneSidedItem(card, otherSideLastUpdated, options);
   }
 
   const cardUpdated = getItemTime(card);
@@ -240,7 +246,7 @@ const shouldKeepOneSidedCard = (
 const mergeBoards = (
   remoteSpace,
   localSpace,
-  { remoteCardIndex, localCardIndex } = {},
+  { remoteCardIndex, localCardIndex, keepOneSided = false } = {},
 ) => {
   const remoteBoards = remoteSpace?.boards ?? [];
   const localBoards = localSpace?.boards ?? [];
@@ -258,12 +264,16 @@ const mergeBoards = (
       const remote = remoteBoardMap.get(boardId);
       const local = localBoardMap.get(boardId);
       if (!remote) {
-        return shouldKeepOneSidedItem(local, remoteSpace?.updatedAt)
+        return shouldKeepOneSidedItem(local, remoteSpace?.updatedAt, {
+          keepOneSided,
+        })
           ? cloneItem(local)
           : null;
       }
       if (!local) {
-        return shouldKeepOneSidedItem(remote, localSpace?.updatedAt)
+        return shouldKeepOneSidedItem(remote, localSpace?.updatedAt, {
+          keepOneSided,
+        })
           ? cloneItem(remote)
           : null;
       }
@@ -287,6 +297,7 @@ const mergeBoards = (
               remoteCardIndex?.get(cardId),
               local.updatedAt,
               remote.updatedAt,
+              { keepOneSided },
             )
               ? cloneItem(lc)
               : null;
@@ -297,6 +308,7 @@ const mergeBoards = (
               localCardIndex?.get(cardId),
               remote.updatedAt,
               local.updatedAt,
+              { keepOneSided },
             )
               ? cloneItem(rc)
               : null;
@@ -320,7 +332,11 @@ const mergeBoards = (
     .filter(Boolean);
 };
 
-export const mergeStates = (remoteState, localState) => {
+export const mergeStates = (
+  remoteState,
+  localState,
+  { keepOneSided = false } = {},
+) => {
   if (!remoteState || !Array.isArray(remoteState.spaces)) return localState;
   if (!localState || !Array.isArray(localState.spaces)) return remoteState;
 
@@ -349,12 +365,16 @@ export const mergeStates = (remoteState, localState) => {
       const remote = remoteSpaceMap.get(spaceId);
       const local = localSpaceMap.get(spaceId);
       if (!remote) {
-        return shouldKeepOneSidedItem(local, remoteSpacesPeak)
+        return shouldKeepOneSidedItem(local, remoteSpacesPeak, {
+          keepOneSided,
+        })
           ? cloneItem(local)
           : null;
       }
       if (!local) {
-        return shouldKeepOneSidedItem(remote, localSpacesPeak)
+        return shouldKeepOneSidedItem(remote, localSpacesPeak, {
+          keepOneSided,
+        })
           ? cloneItem(remote)
           : null;
       }
@@ -362,6 +382,7 @@ export const mergeStates = (remoteState, localState) => {
       const mergedBoards = mergeBoards(remote, local, {
         remoteCardIndex,
         localCardIndex,
+        keepOneSided,
       });
 
       const remoteSpaceTime = toTime(remote.updatedAt);
@@ -442,14 +463,13 @@ const runDriveSync = async ({
 
     const resolvedLocalState = localState ?? getState();
 
-    if (reason === "connect" && remoteState) {
-      isDriveSyncSuppressed = true;
-      replaceState(remoteState, { preserveTimestamp: true });
-      isDriveSyncSuppressed = false;
-      return;
-    }
-
-    const mergedState = mergeStates(remoteState, resolvedLocalState);
+    // First connect has no shared deletion horizon: neither side can have
+    // "deleted" the other's items because they have never met before.
+    // Force keepOneSided to avoid silently dropping local data when the
+    // user connects to a Drive that already has data from another device.
+    const mergedState = mergeStates(remoteState, resolvedLocalState, {
+      keepOneSided: reason === "connect",
+    });
     const hasChanges =
       JSON.stringify(mergedState) !== JSON.stringify(resolvedLocalState);
 
