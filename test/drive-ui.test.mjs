@@ -161,6 +161,36 @@ describe("Drive state merging", () => {
     );
   });
 
+  test("a remote board reorder survives a local-only preference bump", () => {
+    // Remote: boards reordered to [b, a] at 2026-04-22 (board.updatedAt set).
+    // Local: still [a, b] at older timestamps, but state.lastUpdated bumped
+    // to 2026-04-23 because user toggled tabDrawerPinned (preference-only).
+    const remote = state(
+      [
+        board("board-b", [], "2026-04-22T00:00:00.000Z"),
+        board("board-a", [], "2026-04-22T00:00:00.000Z"),
+      ],
+      "2026-04-22T00:00:00.000Z",
+    );
+    remote.spaces[0].updatedAt = "2026-04-22T00:00:00.000Z";
+
+    const local = state(
+      [
+        board("board-a", [], "2026-04-20T00:00:00.000Z"),
+        board("board-b", [], "2026-04-20T00:00:00.000Z"),
+      ],
+      "2026-04-23T00:00:00.000Z",
+    );
+    local.spaces[0].updatedAt = "2026-04-20T00:00:00.000Z";
+
+    const merged = driveUi.mergeStates(remote, local);
+    assert.deepEqual(
+      merged.spaces[0].boards.map((b) => b.id),
+      ["board-b", "board-a"],
+      "remote reorder must win when only local-state.lastUpdated changed",
+    );
+  });
+
   test("favorite toggled on one side beats stale edit on the other", () => {
     const localCard = card("card-1", "2026-04-22T00:00:00.000Z", {
       favorite: true,

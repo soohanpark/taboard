@@ -167,16 +167,33 @@ const toTime = (value) => {
 const getItemTime = (item) =>
   toTime(item?.updatedAt) || toTime(item?.createdAt);
 
+const maxItemTime = (items = []) => {
+  let max = 0;
+  for (const item of items ?? []) {
+    const t = getItemTime(item);
+    if (t > max) max = t;
+  }
+  return max;
+};
+
+// Ordering precedence comes from the *container that owns the order*
+// (board.updatedAt for cards, space.updatedAt for boards). When no
+// single container timestamp is available — e.g. comparing top-level
+// spaces — fall back to the freshest item timestamp on each side.
+// Whole-state lastUpdated is unsafe here because it bumps on unrelated
+// preference writes (searchTerm, tabDrawerPinned, lastSyncAt).
 const getOrderedIds = (
   remoteItems = [],
   localItems = [],
-  remoteLastUpdated,
-  localLastUpdated,
+  remoteContainerUpdated,
+  localContainerUpdated,
 ) => {
   const remoteIds = (remoteItems ?? []).map((item) => item.id);
   const localIds = (localItems ?? []).map((item) => item.id);
-  const preferLocalOrder =
-    toTime(localLastUpdated) >= toTime(remoteLastUpdated);
+  const remoteRank =
+    toTime(remoteContainerUpdated) || maxItemTime(remoteItems);
+  const localRank = toTime(localContainerUpdated) || maxItemTime(localItems);
+  const preferLocalOrder = localRank >= remoteRank;
   const preferred = preferLocalOrder ? localIds : remoteIds;
   const fallback = preferLocalOrder ? remoteIds : localIds;
   return [...new Set([...preferred, ...fallback])];
@@ -221,19 +238,19 @@ const shouldKeepOneSidedCard = (
 };
 
 const mergeBoards = (
-  remoteBoards,
-  localBoards,
-  remoteLastUpdated,
-  localLastUpdated,
+  remoteSpace,
+  localSpace,
   { remoteCardIndex, localCardIndex } = {},
 ) => {
-  const remoteBoardMap = new Map((remoteBoards ?? []).map((b) => [b.id, b]));
-  const localBoardMap = new Map((localBoards ?? []).map((b) => [b.id, b]));
+  const remoteBoards = remoteSpace?.boards ?? [];
+  const localBoards = localSpace?.boards ?? [];
+  const remoteBoardMap = new Map(remoteBoards.map((b) => [b.id, b]));
+  const localBoardMap = new Map(localBoards.map((b) => [b.id, b]));
   const allBoardIds = getOrderedIds(
     remoteBoards,
     localBoards,
-    remoteLastUpdated,
-    localLastUpdated,
+    remoteSpace?.updatedAt,
+    localSpace?.updatedAt,
   );
 
   return allBoardIds
@@ -241,12 +258,12 @@ const mergeBoards = (
       const remote = remoteBoardMap.get(boardId);
       const local = localBoardMap.get(boardId);
       if (!remote) {
-        return shouldKeepOneSidedItem(local, remoteLastUpdated)
+        return shouldKeepOneSidedItem(local, remoteSpace?.updatedAt)
           ? cloneItem(local)
           : null;
       }
       if (!local) {
-        return shouldKeepOneSidedItem(remote, localLastUpdated)
+        return shouldKeepOneSidedItem(remote, localSpace?.updatedAt)
           ? cloneItem(remote)
           : null;
       }
@@ -256,8 +273,8 @@ const mergeBoards = (
       const allCardIds = getOrderedIds(
         remote.cards,
         local.cards,
-        remoteLastUpdated,
-        localLastUpdated,
+        remote.updatedAt,
+        local.updatedAt,
       );
 
       const mergedCards = allCardIds
@@ -268,8 +285,8 @@ const mergeBoards = (
             return shouldKeepOneSidedCard(
               lc,
               remoteCardIndex?.get(cardId),
-              localLastUpdated,
-              remoteLastUpdated,
+              local.updatedAt,
+              remote.updatedAt,
             )
               ? cloneItem(lc)
               : null;
@@ -278,8 +295,8 @@ const mergeBoards = (
             return shouldKeepOneSidedCard(
               rc,
               localCardIndex?.get(cardId),
-              remoteLastUpdated,
-              localLastUpdated,
+              remote.updatedAt,
+              local.updatedAt,
             )
               ? cloneItem(rc)
               : null;
@@ -309,37 +326,43 @@ export const mergeStates = (remoteState, localState) => {
 
   const remoteSpaceMap = new Map(remoteState.spaces.map((s) => [s.id, s]));
   const localSpaceMap = new Map(localState.spaces.map((s) => [s.id, s]));
+  // No single container owns the space-list ordering, so getOrderedIds will
+  // fall back to maxItemTime() — i.e. whichever side has the freshest space
+  // wins the order tie. That avoids using state.lastUpdated, which moves
+  // for unrelated preference writes.
   const allSpaceIds = getOrderedIds(
     remoteState.spaces,
     localState.spaces,
-    remoteState.lastUpdated,
-    localState.lastUpdated,
+    undefined,
+    undefined,
   );
   const remoteCardIndex = indexCards(remoteState);
   const localCardIndex = indexCards(localState);
+  // For the one-sided space case we still need a "freshest known activity"
+  // signal on the missing side — the freshest space.updatedAt is the closest
+  // safe proxy.
+  const remoteSpacesPeak = maxItemTime(remoteState.spaces);
+  const localSpacesPeak = maxItemTime(localState.spaces);
 
   const mergedSpaces = allSpaceIds
     .map((spaceId) => {
       const remote = remoteSpaceMap.get(spaceId);
       const local = localSpaceMap.get(spaceId);
       if (!remote) {
-        return shouldKeepOneSidedItem(local, remoteState.lastUpdated)
+        return shouldKeepOneSidedItem(local, remoteSpacesPeak)
           ? cloneItem(local)
           : null;
       }
       if (!local) {
-        return shouldKeepOneSidedItem(remote, localState.lastUpdated)
+        return shouldKeepOneSidedItem(remote, localSpacesPeak)
           ? cloneItem(remote)
           : null;
       }
 
-      const mergedBoards = mergeBoards(
-        remote.boards,
-        local.boards,
-        remoteState.lastUpdated,
-        localState.lastUpdated,
-        { remoteCardIndex, localCardIndex },
-      );
+      const mergedBoards = mergeBoards(remote, local, {
+        remoteCardIndex,
+        localCardIndex,
+      });
 
       const remoteSpaceTime = toTime(remote.updatedAt);
       const localSpaceTime = toTime(local.updatedAt);
