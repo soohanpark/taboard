@@ -435,7 +435,10 @@ const handleCardAction = (action, boardId, cardId, spaceId = null) => {
         draft.spaces[indices.spaceIdx]?.boards[indices.boardIdx]?.cards[
           indices.cardIdx
         ];
-      if (target) target.favorite = !target.favorite;
+      if (target) {
+        target.favorite = !target.favorite;
+        target.updatedAt = new Date().toISOString();
+      }
     });
   if (action === "toggle-done")
     return updateState((draft) => {
@@ -443,7 +446,10 @@ const handleCardAction = (action, boardId, cardId, spaceId = null) => {
         draft.spaces[indices.spaceIdx]?.boards[indices.boardIdx]?.cards[
           indices.cardIdx
         ];
-      if (target) target.done = !target.done;
+      if (target) {
+        target.done = !target.done;
+        target.updatedAt = new Date().toISOString();
+      }
     });
   if (action === "edit") return openCardModal({ boardId, cardId, spaceId });
   if (action === "open") {

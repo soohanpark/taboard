@@ -161,6 +161,27 @@ describe("Drive state merging", () => {
     );
   });
 
+  test("favorite toggled on one side beats stale edit on the other", () => {
+    const localCard = card("card-1", "2026-04-22T00:00:00.000Z", {
+      favorite: true,
+    });
+    const remoteCard = card("card-1", "2026-04-21T00:00:00.000Z", {
+      title: "Older title",
+    });
+    const remote = state(
+      [board("board-a", [remoteCard], "2026-04-21T00:00:00.000Z")],
+      "2026-04-21T00:00:00.000Z",
+    );
+    const local = state(
+      [board("board-a", [localCard], "2026-04-22T00:00:00.000Z")],
+      "2026-04-22T00:00:00.000Z",
+    );
+
+    const merged = driveUi.mergeStates(remote, local);
+    assert.equal(merged.spaces[0].boards[0].cards[0].favorite, true);
+    assert.equal(merged.spaces[0].boards[0].cards[0].title, "card-1");
+  });
+
   test("keeps the newer local board and space order", () => {
     assert.equal(typeof driveUi.mergeStates, "function");
 
