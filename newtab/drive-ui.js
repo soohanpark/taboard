@@ -479,6 +479,7 @@ const runDriveSync = async ({
       isDriveSyncSuppressed = false;
     }
     await pushToDrive(getState(), syncOptions);
+    recordSyncTimestamp();
   } catch (error) {
     if (error?.name === "AbortError") {
       showSnackbar("Drive sync timed out. Will retry later.");
@@ -561,7 +562,6 @@ export const initDriveUI = () => {
       }
       showSnackbar("Connected to Google Drive.");
       scheduleDriveSync(getState(), { immediate: true });
-      recordSyncTimestamp();
     } catch (error) {
       showSnackbar("Failed to connect to Drive: " + error.message);
     }
@@ -592,7 +592,6 @@ export const initDriveUI = () => {
     try {
       await runDriveSync({ reason: "manual" });
       showSnackbar("Manual sync with Drive completed.");
-      recordSyncTimestamp();
     } catch (error) {
       showSnackbar("Drive sync failed: " + error.message);
       setDriveStatusText("Sync failed — try again");
