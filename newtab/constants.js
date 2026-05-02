@@ -6,7 +6,6 @@ export const DRIVE_SYNC_DEBOUNCE_MS = 1500;
 export const SEARCH_DEBOUNCE_MS = 150;
 export const TAB_UPDATE_DEBOUNCE_MS = 100;
 export const DRIVE_SYNC_INTERVAL = 30 * 60 * 1000;
-export const NEWTAB_DRIVE_CHECK_INTERVAL = 60 * 60 * 1000;
 export const TAB_DRAG_MIME = "application/taboard-tab";
 export const VIEW_MODES = { SPACES: "spaces", FAVORITES: "favorites" };
 export const FALLBACK_FAVICON =

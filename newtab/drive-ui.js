@@ -3,6 +3,7 @@ import { saveStateToStorage } from "./storage.js";
 import {
   connectDrive,
   disconnectDrive,
+  getDriveFileModifiedTime,
   getDriveSnapshot,
   pullFromDrive,
   pushToDrive,
@@ -12,7 +13,6 @@ import {
   PERSIST_DEBOUNCE_MS,
   DRIVE_SYNC_DEBOUNCE_MS,
   DRIVE_SYNC_INTERVAL,
-  NEWTAB_DRIVE_CHECK_INTERVAL,
 } from "./constants.js";
 
 const driveControl = document.getElementById("drive-control");
@@ -28,9 +28,22 @@ let driveSyncIntervalId = null;
 let syncQueue = [];
 let syncInFlight = false;
 let isDriveSyncSuppressed = false;
-let hasPulledDriveState = false;
+// Drive is the source of truth: this is the spaces JSON we last successfully
+// pulled from or pushed to Drive. Until we have a value, no push fires —
+// otherwise a startup that hasn't yet pulled would overwrite Drive data.
+let lastResolvedSpacesHash = null;
+let pendingPushState = null;
 let initialized = false;
 let driveMenuOpen = false;
+
+const SYNC_TIMEOUT_MS = 30000;
+
+const computeSpacesHash = (state) => JSON.stringify(state?.spaces ?? []);
+
+const stateHasContent = (state) =>
+  (state?.spaces ?? []).some((space) =>
+    (space?.boards ?? []).some((board) => (board?.cards ?? []).length > 0),
+  );
 
 const formatRelativeTime = (timestamp) => {
   if (!timestamp) return "Not synced yet";
@@ -60,9 +73,7 @@ const refreshDriveStatusFromState = () => {
 };
 
 const recordSyncTimestamp = () => {
-  // Suppress sync to avoid scheduling another Drive push just for the
-  // timestamp bump (otherwise every successful sync triggers a redundant
-  // follow-up push 1.5s later carrying only the new lastSyncAt).
+  const prevSuppress = isDriveSyncSuppressed;
   isDriveSyncSuppressed = true;
   try {
     updateState((draft) => {
@@ -70,7 +81,7 @@ const recordSyncTimestamp = () => {
       draft.preferences.lastSyncAt = Date.now();
     });
   } finally {
-    isDriveSyncSuppressed = false;
+    isDriveSyncSuppressed = prevSuppress;
   }
   refreshDriveStatusFromState();
 };
@@ -116,392 +127,197 @@ const releaseSyncMutex = () => {
   syncInFlight = false;
 };
 
-export const schedulePersist = (state) => {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => saveStateToStorage(state), PERSIST_DEBOUNCE_MS);
-};
-
-export const scheduleDriveSync = (
-  state,
-  { immediate = false, trigger = null, meta = null } = {},
-) => {
-  if (isDriveSyncSuppressed) {
-    return;
-  }
-
-  const driveSnapshot = getDriveSnapshot();
-  if (driveSnapshot.status !== "connected") {
-    return;
-  }
-
-  clearTimeout(driveTimer);
-  const executor = async () => {
-    try {
-      await runDriveSync({
-        reason: trigger === "add-card" ? "add-card" : "debounced",
-        localState: state,
-        meta,
-        throwOnError: immediate,
-      });
-      if (immediate) showSnackbar("Google Drive backup complete");
-    } catch {
-      // runDriveSync handles its own error reporting
-    }
-  };
-
-  if (immediate || trigger === "add-card") {
-    executor();
-  } else {
-    driveTimer = setTimeout(executor, DRIVE_SYNC_DEBOUNCE_MS);
-  }
-};
-
-const cloneItem = (item) => JSON.parse(JSON.stringify(item));
-
-const toTime = (value) => {
-  if (!value) return 0;
-  const time = new Date(value).getTime();
-  return Number.isNaN(time) ? 0 : time;
-};
-
-const getItemTime = (item) =>
-  toTime(item?.updatedAt) || toTime(item?.createdAt);
-
-const maxItemTime = (items = []) => {
-  let max = 0;
-  for (const item of items ?? []) {
-    const t = getItemTime(item);
-    if (t > max) max = t;
-  }
-  return max;
-};
-
-// Ordering precedence comes from the *container that owns the order*
-// (board.updatedAt for cards, space.updatedAt for boards). When no
-// single container timestamp is available — e.g. comparing top-level
-// spaces — fall back to the freshest item timestamp on each side.
-// Whole-state lastUpdated is unsafe here because it bumps on unrelated
-// preference writes (searchTerm, tabDrawerPinned, lastSyncAt).
-const getOrderedIds = (
-  remoteItems = [],
-  localItems = [],
-  remoteContainerUpdated,
-  localContainerUpdated,
-) => {
-  const remoteIds = (remoteItems ?? []).map((item) => item.id);
-  const localIds = (localItems ?? []).map((item) => item.id);
-  const remoteRank = toTime(remoteContainerUpdated) || maxItemTime(remoteItems);
-  const localRank = toTime(localContainerUpdated) || maxItemTime(localItems);
-  const preferLocalOrder = localRank >= remoteRank;
-  const preferred = preferLocalOrder ? localIds : remoteIds;
-  const fallback = preferLocalOrder ? remoteIds : localIds;
-  return [...new Set([...preferred, ...fallback])];
-};
-
-const indexCards = (state) => {
-  const index = new Map();
-  for (const space of state?.spaces ?? []) {
-    for (const board of space?.boards ?? []) {
-      for (const card of board?.cards ?? []) {
-        index.set(card.id, card);
-      }
-    }
-  }
-  return index;
-};
-
-const shouldKeepOneSidedItem = (
-  item,
-  otherSideLastUpdated,
-  { keepOneSided = false } = {},
-) => {
-  if (keepOneSided) return true;
-  const itemTime = getItemTime(item);
-  const otherUpdated = toTime(otherSideLastUpdated);
-  if (!itemTime || !otherUpdated) return true;
-  return itemTime >= otherUpdated;
-};
-
-const shouldKeepOneSidedCard = (
-  card,
-  otherSideCard,
-  ownSideLastUpdated,
-  otherSideLastUpdated,
-  options = {},
-) => {
-  if (!otherSideCard) {
-    return shouldKeepOneSidedItem(card, otherSideLastUpdated, options);
-  }
-
-  const cardUpdated = getItemTime(card);
-  const otherCardUpdated = getItemTime(otherSideCard);
-  if (cardUpdated !== otherCardUpdated) {
-    return cardUpdated > otherCardUpdated;
-  }
-
-  return toTime(ownSideLastUpdated) >= toTime(otherSideLastUpdated);
-};
-
-const mergeBoards = (
-  remoteSpace,
-  localSpace,
-  { remoteCardIndex, localCardIndex, keepOneSided = false } = {},
-) => {
-  const remoteBoards = remoteSpace?.boards ?? [];
-  const localBoards = localSpace?.boards ?? [];
-  const remoteBoardMap = new Map(remoteBoards.map((b) => [b.id, b]));
-  const localBoardMap = new Map(localBoards.map((b) => [b.id, b]));
-  const allBoardIds = getOrderedIds(
-    remoteBoards,
-    localBoards,
-    remoteSpace?.updatedAt,
-    localSpace?.updatedAt,
-  );
-
-  return allBoardIds
-    .map((boardId) => {
-      const remote = remoteBoardMap.get(boardId);
-      const local = localBoardMap.get(boardId);
-      if (!remote) {
-        return shouldKeepOneSidedItem(local, remoteSpace?.updatedAt, {
-          keepOneSided,
-        })
-          ? cloneItem(local)
-          : null;
-      }
-      if (!local) {
-        return shouldKeepOneSidedItem(remote, localSpace?.updatedAt, {
-          keepOneSided,
-        })
-          ? cloneItem(remote)
-          : null;
-      }
-
-      const remoteCardMap = new Map((remote.cards ?? []).map((c) => [c.id, c]));
-      const localCardMap = new Map((local.cards ?? []).map((c) => [c.id, c]));
-      const allCardIds = getOrderedIds(
-        remote.cards,
-        local.cards,
-        remote.updatedAt,
-        local.updatedAt,
-      );
-
-      const mergedCards = allCardIds
-        .map((cardId) => {
-          const rc = remoteCardMap.get(cardId);
-          const lc = localCardMap.get(cardId);
-          if (!rc) {
-            return shouldKeepOneSidedCard(
-              lc,
-              remoteCardIndex?.get(cardId),
-              local.updatedAt,
-              remote.updatedAt,
-              { keepOneSided },
-            )
-              ? cloneItem(lc)
-              : null;
-          }
-          if (!lc) {
-            return shouldKeepOneSidedCard(
-              rc,
-              localCardIndex?.get(cardId),
-              remote.updatedAt,
-              local.updatedAt,
-              { keepOneSided },
-            )
-              ? cloneItem(rc)
-              : null;
-          }
-
-          const remoteUpdated = toTime(rc.updatedAt);
-          const localUpdated = toTime(lc.updatedAt);
-          return cloneItem(localUpdated >= remoteUpdated ? lc : rc);
-        })
-        .filter(Boolean);
-
-      const remoteUpdated = toTime(remote.updatedAt);
-      const localUpdated = toTime(local.updatedAt);
-      const base = localUpdated >= remoteUpdated ? local : remote;
-
-      return {
-        ...cloneItem(base),
-        cards: mergedCards,
-      };
-    })
-    .filter(Boolean);
-};
-
-export const mergeStates = (
-  remoteState,
-  localState,
-  { keepOneSided = false } = {},
-) => {
-  if (!remoteState || !Array.isArray(remoteState.spaces)) return localState;
-  if (!localState || !Array.isArray(localState.spaces)) return remoteState;
-
-  const remoteSpaceMap = new Map(remoteState.spaces.map((s) => [s.id, s]));
-  const localSpaceMap = new Map(localState.spaces.map((s) => [s.id, s]));
-  // No single container owns the space-list ordering, so getOrderedIds will
-  // fall back to maxItemTime() — i.e. whichever side has the freshest space
-  // wins the order tie. That avoids using state.lastUpdated, which moves
-  // for unrelated preference writes.
-  const allSpaceIds = getOrderedIds(
-    remoteState.spaces,
-    localState.spaces,
-    undefined,
-    undefined,
-  );
-  const remoteCardIndex = indexCards(remoteState);
-  const localCardIndex = indexCards(localState);
-  // For the one-sided space case we still need a "freshest known activity"
-  // signal on the missing side — the freshest space.updatedAt is the closest
-  // safe proxy.
-  const remoteSpacesPeak = maxItemTime(remoteState.spaces);
-  const localSpacesPeak = maxItemTime(localState.spaces);
-
-  const mergedSpaces = allSpaceIds
-    .map((spaceId) => {
-      const remote = remoteSpaceMap.get(spaceId);
-      const local = localSpaceMap.get(spaceId);
-      if (!remote) {
-        return shouldKeepOneSidedItem(local, remoteSpacesPeak, {
-          keepOneSided,
-        })
-          ? cloneItem(local)
-          : null;
-      }
-      if (!local) {
-        return shouldKeepOneSidedItem(remote, localSpacesPeak, {
-          keepOneSided,
-        })
-          ? cloneItem(remote)
-          : null;
-      }
-
-      const mergedBoards = mergeBoards(remote, local, {
-        remoteCardIndex,
-        localCardIndex,
-        keepOneSided,
-      });
-
-      const remoteSpaceTime = toTime(remote.updatedAt);
-      const localSpaceTime = toTime(local.updatedAt);
-      const baseSpace = localSpaceTime >= remoteSpaceTime ? local : remote;
-
-      return {
-        ...cloneItem(baseSpace),
-        boards: mergedBoards,
-      };
-    })
-    .filter(Boolean);
-
-  const remoteTime = toTime(remoteState.lastUpdated);
-  const localTime = toTime(localState.lastUpdated);
-  const newerState = localTime >= remoteTime ? localState : remoteState;
-
-  return {
-    ...cloneItem(newerState),
-    spaces: mergedSpaces,
-    lastUpdated: new Date(
-      Math.max(remoteTime, localTime) || Date.now(),
-    ).toISOString(),
-  };
-};
-
-export const shouldRethrowSyncError = (
-  error,
-  { reason = "interval", throwOnError = false } = {},
-) =>
-  Boolean(
-    error &&
-    (throwOnError ||
-      reason === "manual" ||
-      reason === "add-card" ||
-      reason === "connect"),
-  );
-
-const runDriveSync = async ({
-  reason = "interval",
-  localState = null,
-  meta = null,
-  throwOnError = false,
-} = {}) => {
-  const snapshot = getDriveSnapshot();
-  if (snapshot.status !== "connected") return;
-
-  if (reason === "newtab") {
-    const lastCheckedAt = snapshot.lastCheckedAt
-      ? new Date(snapshot.lastCheckedAt).getTime()
-      : 0;
-    if (
-      lastCheckedAt &&
-      Date.now() - lastCheckedAt < NEWTAB_DRIVE_CHECK_INTERVAL
-    ) {
-      return;
-    }
-  }
-
+const runWithMutex = async (fn) => {
   await acquireSyncMutex();
-
-  const syncAbortController = new AbortController();
-  const timeoutId = setTimeout(() => {
-    syncAbortController.abort();
-  }, 30000);
-
+  const ac = new AbortController();
+  const timeoutId = setTimeout(() => ac.abort(), SYNC_TIMEOUT_MS);
   try {
-    const isBackground = reason === "interval" || reason === "newtab";
-    const syncOptions = {
-      signal: syncAbortController.signal,
-      allowInteractive: !isBackground,
-    };
-
-    const remoteState = await pullFromDrive({
-      markChecked: reason === "newtab",
-      ...syncOptions,
-    });
-
-    const resolvedLocalState = localState ?? getState();
-
-    // First connect has no shared deletion horizon: neither side can have
-    // "deleted" the other's items because they have never met before.
-    // Force keepOneSided to avoid silently dropping local data when the
-    // user connects to a Drive that already has data from another device.
-    const mergedState = mergeStates(remoteState, resolvedLocalState, {
-      keepOneSided: reason === "connect",
-    });
-    const hasChanges =
-      JSON.stringify(mergedState) !== JSON.stringify(resolvedLocalState);
-
-    if (hasChanges) {
-      isDriveSyncSuppressed = true;
-      replaceState(mergedState);
-      isDriveSyncSuppressed = false;
-    }
-    await pushToDrive(getState(), syncOptions);
-    recordSyncTimestamp();
-  } catch (error) {
-    if (error?.name === "AbortError") {
-      showSnackbar("Drive sync timed out. Will retry later.");
-      if (shouldRethrowSyncError(error, { reason, throwOnError })) {
-        throw error;
-      }
-      return;
-    }
-    if (shouldRethrowSyncError(error, { reason, throwOnError })) {
-      throw error;
-    }
+    return await fn(ac.signal);
   } finally {
     clearTimeout(timeoutId);
     releaseSyncMutex();
   }
 };
 
+// Replace local state with remote, but preserve device-local UI prefs.
+// Wraps replaceState in the suppress flag so the resulting state-change
+// notification does not schedule a push back to Drive.
+const adoptRemoteState = (remote) => {
+  const local = getState();
+  const localPrefs = local?.preferences ?? {};
+  const remotePrefs = remote?.preferences ?? {};
+  const merged = {
+    ...remote,
+    preferences: {
+      ...remotePrefs,
+      activeSpaceId:
+        localPrefs.activeSpaceId ?? remotePrefs.activeSpaceId ?? null,
+      activeBoardId:
+        localPrefs.activeBoardId ?? remotePrefs.activeBoardId ?? null,
+      searchTerm: localPrefs.searchTerm ?? "",
+      viewMode: localPrefs.viewMode ?? remotePrefs.viewMode ?? "spaces",
+      tabDrawerPinned:
+        localPrefs.tabDrawerPinned ?? remotePrefs.tabDrawerPinned ?? false,
+      lastSyncAt: localPrefs.lastSyncAt ?? remotePrefs.lastSyncAt ?? null,
+    },
+  };
+  const prevSuppress = isDriveSyncSuppressed;
+  isDriveSyncSuppressed = true;
+  try {
+    replaceState(merged);
+  } finally {
+    isDriveSyncSuppressed = prevSuppress;
+  }
+  lastResolvedSpacesHash = computeSpacesHash(getState());
+};
+
+export const setBootstrapSuppress = (value) => {
+  isDriveSyncSuppressed = Boolean(value);
+};
+
+export const schedulePersist = (state) => {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => saveStateToStorage(state), PERSIST_DEBOUNCE_MS);
+};
+
+const flushPushNow = async (immediate) => {
+  const state = pendingPushState;
+  pendingPushState = null;
+  if (!state) return;
+  try {
+    await runWithMutex(async (signal) => {
+      const result = await pushToDrive(state, {
+        signal,
+        allowInteractive: true,
+      });
+      lastResolvedSpacesHash = computeSpacesHash(state);
+      recordSyncTimestamp();
+      return result;
+    });
+    if (immediate) showSnackbar("Google Drive backup complete");
+  } catch (error) {
+    if (immediate && error?.name !== "AbortError") {
+      // pushToDrive already surfaces a snackbar
+    }
+  }
+};
+
+// Called from handleStateChange on every state notification. It is the only
+// caller that can trigger a Drive push, and it only does so for actual
+// content (spaces) changes — not for searchTerm/viewMode/lastSyncAt churn.
+export const scheduleDriveSync = (
+  state,
+  { immediate = false, trigger = null } = {},
+) => {
+  if (isDriveSyncSuppressed) return;
+  if (getDriveSnapshot().status !== "connected") return;
+  // Until we have successfully resolved Drive state (pulled or seeded),
+  // never push — otherwise a fresh profile would overwrite Drive content.
+  if (lastResolvedSpacesHash === null) return;
+
+  const spacesHash = computeSpacesHash(state);
+  if (spacesHash === lastResolvedSpacesHash) return;
+
+  pendingPushState = state;
+  clearTimeout(driveTimer);
+
+  if (immediate || trigger === "add-card") {
+    flushPushNow(immediate);
+  } else {
+    driveTimer = setTimeout(() => flushPushNow(false), DRIVE_SYNC_DEBOUNCE_MS);
+  }
+};
+
+// Bootstrap / connect-time pull. Drive wins. If Drive is empty but local
+// has content, seed Drive with local instead of wiping local.
+export const pullDriveOnStartup = async ({ reason = "startup" } = {}) => {
+  if (getDriveSnapshot().status !== "connected") return;
+  const isBackground = reason !== "connect" && reason !== "manual";
+
+  return await runWithMutex(async (signal) => {
+    const { data: remote } = await pullFromDrive({
+      markChecked: true,
+      signal,
+      allowInteractive: !isBackground,
+    });
+
+    const localState = getState();
+    const remoteHasContent = stateHasContent(remote);
+    const localHasContent = stateHasContent(localState);
+
+    if (!remoteHasContent && localHasContent) {
+      const seedState = localState;
+      await pushToDrive(seedState, { signal, allowInteractive: !isBackground });
+      lastResolvedSpacesHash = computeSpacesHash(seedState);
+      recordSyncTimestamp();
+      if (reason === "connect") {
+        showSnackbar("Initial sync complete.");
+      }
+    } else {
+      adoptRemoteState(remote);
+      recordSyncTimestamp();
+    }
+  });
+};
+
+// Periodic background pull. Cheap modifiedTime probe gates the full
+// download. If remote hasn't changed since we last touched the file,
+// no body fetch happens.
+export const pullDrivePeriodic = async ({ force = false } = {}) => {
+  if (getDriveSnapshot().status !== "connected") return;
+
+  return await runWithMutex(async (signal) => {
+    const snapshot = getDriveSnapshot();
+    if (!force && snapshot.lastKnownDriveModifiedTime) {
+      try {
+        const remoteModified = await getDriveFileModifiedTime({
+          signal,
+          allowInteractive: false,
+        });
+        if (
+          remoteModified &&
+          remoteModified <= snapshot.lastKnownDriveModifiedTime
+        ) {
+          return;
+        }
+      } catch {
+        // fall through to full pull
+      }
+    }
+
+    let remote;
+    try {
+      ({ data: remote } = await pullFromDrive({
+        markChecked: true,
+        signal,
+        allowInteractive: false,
+      }));
+    } catch {
+      return;
+    }
+
+    const remoteHash = computeSpacesHash(remote);
+    if (remoteHash !== computeSpacesHash(getState())) {
+      adoptRemoteState(remote);
+    } else {
+      lastResolvedSpacesHash = remoteHash;
+    }
+  });
+};
+
+// Manual "Sync now" button. Force-pull then push current state.
+export const runManualSync = async () => {
+  if (getDriveSnapshot().status !== "connected") return;
+  await pullDrivePeriodic({ force: true });
+  pendingPushState = getState();
+  await flushPushNow(false);
+};
+
 export const startDriveBackgroundSync = () => {
   if (driveSyncIntervalId) return;
   driveSyncIntervalId = setInterval(() => {
-    runDriveSync({ reason: "interval" });
+    pullDrivePeriodic();
   }, DRIVE_SYNC_INTERVAL);
-  runDriveSync({ reason: "newtab" });
 };
 
 export const stopDriveBackgroundSync = () => {
@@ -515,6 +331,7 @@ export const stopDriveBackgroundSync = () => {
   saveTimer = null;
   syncQueue = [];
   syncInFlight = false;
+  pendingPushState = null;
 };
 
 export const cleanupDriveUI = () => {
@@ -531,7 +348,7 @@ export const handleDriveUpdate = (snapshot) => {
     startDriveBackgroundSync();
   } else {
     stopDriveBackgroundSync();
-    hasPulledDriveState = false;
+    lastResolvedSpacesHash = null;
   }
   if (driveControl) {
     driveControl.classList.toggle("connected", connected);
@@ -551,16 +368,14 @@ export const initDriveUI = () => {
     }
     try {
       await connectDrive();
-      if (!hasPulledDriveState) {
-        try {
-          await runDriveSync({ reason: "connect" });
-          hasPulledDriveState = true;
-        } catch {
-          // pull failure already reported via showSnackbar in pullFromDrive
-        }
+      try {
+        await pullDriveOnStartup({ reason: "connect" });
+      } catch {
+        // pullFromDrive already snackbar'd
       }
-      showSnackbar("Connected to Google Drive.");
-      scheduleDriveSync(getState(), { immediate: true });
+      if (lastResolvedSpacesHash !== null) {
+        showSnackbar("Connected to Google Drive.");
+      }
     } catch (error) {
       showSnackbar("Failed to connect to Drive: " + error.message);
     }
@@ -589,7 +404,7 @@ export const initDriveUI = () => {
     setDriveStatusText("Syncing…");
     showSnackbar("Manually syncing with Google Drive...");
     try {
-      await runDriveSync({ reason: "manual" });
+      await runManualSync();
       showSnackbar("Manual sync with Drive completed.");
     } catch (error) {
       showSnackbar("Drive sync failed: " + error.message);
@@ -604,7 +419,7 @@ export const initDriveUI = () => {
     event.stopPropagation();
     await disconnectDrive();
     stopDriveBackgroundSync();
-    hasPulledDriveState = false;
+    lastResolvedSpacesHash = null;
     closeDriveMenu();
     showSnackbar("Disconnected from Google Drive.");
   });

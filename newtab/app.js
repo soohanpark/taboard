@@ -14,7 +14,7 @@ import {
   restoreDeletedSpace,
 } from "./state.js";
 import { loadStateFromStorage } from "./storage.js";
-import { initDrive, subscribeDrive } from "./drive.js";
+import { getDriveSnapshot, initDrive, subscribeDrive } from "./drive.js";
 import {
   SEARCH_DEBOUNCE_MS,
   SNACKBAR_UNDO_DURATION_MS,
@@ -83,6 +83,8 @@ import {
   handleDriveUpdate,
   initDriveUI,
   cleanupDriveUI,
+  pullDriveOnStartup,
+  setBootstrapSuppress,
 } from "./drive-ui.js";
 const boardEl = document.getElementById("board");
 const spaceTabsEl = document.getElementById("space-tabs");
@@ -574,8 +576,21 @@ const bootstrap = async () => {
   subscribeDrive(handleDriveUpdate);
   initTabs({ addTabCardToBoard });
   renderOpenTabs();
+
+  // Block any push to Drive during bootstrap. Drive is the source of truth
+  // on startup; only after pullDriveOnStartup resolves do we permit pushes.
+  setBootstrapSuppress(true);
   initState((await loadStateFromStorage()) ?? createDefaultState());
   await initDrive();
+  if (getDriveSnapshot().status === "connected") {
+    try {
+      await pullDriveOnStartup({ reason: "startup" });
+    } catch (error) {
+      console.warn("Drive startup pull failed; using local state.", error);
+    }
+  }
+  setBootstrapSuppress(false);
+
   fetchOpenTabs();
   registerTabObservers();
 };
