@@ -1,8 +1,9 @@
-import { getState, replaceState } from "./state.js";
+import { getState, replaceState, updateState } from "./state.js";
 import { saveStateToStorage } from "./storage.js";
 import {
   connectDrive,
   disconnectDrive,
+  getDriveFileModifiedTime,
   getDriveSnapshot,
   pullFromDrive,
   pushToDrive,
@@ -12,11 +13,12 @@ import {
   PERSIST_DEBOUNCE_MS,
   DRIVE_SYNC_DEBOUNCE_MS,
   DRIVE_SYNC_INTERVAL,
-  NEWTAB_DRIVE_CHECK_INTERVAL,
 } from "./constants.js";
 
 const driveControl = document.getElementById("drive-control");
 const driveConnectBtn = document.getElementById("drive-connect");
+const driveMenuEl = document.getElementById("drive-menu");
+const driveMenuStatusEl = document.getElementById("drive-menu-status");
 const driveMenuSyncBtn = document.getElementById("drive-menu-sync");
 const driveMenuDisconnectBtn = document.getElementById("drive-menu-disconnect");
 
@@ -26,11 +28,84 @@ let driveSyncIntervalId = null;
 let syncQueue = [];
 let syncInFlight = false;
 let isDriveSyncSuppressed = false;
-let hasPulledDriveState = false;
+// Drive is the source of truth: this is the spaces JSON we last successfully
+// pulled from or pushed to Drive. Until we have a value, no push fires —
+// otherwise a startup that hasn't yet pulled would overwrite Drive data.
+let lastResolvedSpacesHash = null;
+let pendingPushState = null;
 let initialized = false;
+let driveMenuOpen = false;
 
-let driveCallbacks = {
-  findCardContext: () => ({ card: null }),
+const SYNC_TIMEOUT_MS = 30000;
+
+const computeSpacesHash = (state) => JSON.stringify(state?.spaces ?? []);
+
+const stateHasContent = (state) =>
+  (state?.spaces ?? []).some((space) =>
+    (space?.boards ?? []).some((board) => (board?.cards ?? []).length > 0),
+  );
+
+const formatRelativeTime = (timestamp) => {
+  if (!timestamp) return "Not synced yet";
+  const diff = Date.now() - timestamp;
+  if (diff < 30 * 1000) return "Last synced just now";
+  if (diff < 60 * 60 * 1000) {
+    const minutes = Math.floor(diff / (60 * 1000));
+    return `Last synced ${minutes} min${minutes === 1 ? "" : "s"} ago`;
+  }
+  if (diff < 24 * 60 * 60 * 1000) {
+    const hours = Math.floor(diff / (60 * 60 * 1000));
+    return `Last synced ${hours} hour${hours === 1 ? "" : "s"} ago`;
+  }
+  const days = Math.floor(diff / (24 * 60 * 60 * 1000));
+  return `Last synced ${days} day${days === 1 ? "" : "s"} ago`;
+};
+
+const setDriveStatusText = (text) => {
+  if (!driveMenuStatusEl) return;
+  driveMenuStatusEl.textContent = text;
+};
+
+const refreshDriveStatusFromState = () => {
+  const state = getState();
+  const lastSyncAt = state?.preferences?.lastSyncAt ?? null;
+  setDriveStatusText(formatRelativeTime(lastSyncAt));
+};
+
+const recordSyncTimestamp = () => {
+  const prevSuppress = isDriveSyncSuppressed;
+  isDriveSyncSuppressed = true;
+  try {
+    updateState((draft) => {
+      if (!draft.preferences) draft.preferences = {};
+      draft.preferences.lastSyncAt = Date.now();
+    });
+  } finally {
+    isDriveSyncSuppressed = prevSuppress;
+  }
+  refreshDriveStatusFromState();
+};
+
+export const closeDriveMenu = () => {
+  if (!driveMenuOpen) return;
+  driveMenuOpen = false;
+  driveMenuEl?.setAttribute("data-open", "false");
+  driveMenuEl?.setAttribute("aria-hidden", "true");
+  driveConnectBtn?.setAttribute("aria-expanded", "false");
+};
+
+const openDriveMenu = () => {
+  if (driveMenuOpen) return;
+  driveMenuOpen = true;
+  driveMenuEl?.setAttribute("data-open", "true");
+  driveMenuEl?.setAttribute("aria-hidden", "false");
+  driveConnectBtn?.setAttribute("aria-expanded", "true");
+  refreshDriveStatusFromState();
+};
+
+const toggleDriveMenu = () => {
+  if (driveMenuOpen) closeDriveMenu();
+  else openDriveMenu();
 };
 
 const acquireSyncMutex = () =>
@@ -52,211 +127,197 @@ const releaseSyncMutex = () => {
   syncInFlight = false;
 };
 
+const runWithMutex = async (fn) => {
+  await acquireSyncMutex();
+  const ac = new AbortController();
+  const timeoutId = setTimeout(() => ac.abort(), SYNC_TIMEOUT_MS);
+  try {
+    return await fn(ac.signal);
+  } finally {
+    clearTimeout(timeoutId);
+    releaseSyncMutex();
+  }
+};
+
+// Replace local state with remote, but preserve device-local UI prefs.
+// Wraps replaceState in the suppress flag so the resulting state-change
+// notification does not schedule a push back to Drive.
+const adoptRemoteState = (remote) => {
+  const local = getState();
+  const localPrefs = local?.preferences ?? {};
+  const remotePrefs = remote?.preferences ?? {};
+  const merged = {
+    ...remote,
+    preferences: {
+      ...remotePrefs,
+      activeSpaceId:
+        localPrefs.activeSpaceId ?? remotePrefs.activeSpaceId ?? null,
+      activeBoardId:
+        localPrefs.activeBoardId ?? remotePrefs.activeBoardId ?? null,
+      searchTerm: localPrefs.searchTerm ?? "",
+      viewMode: localPrefs.viewMode ?? remotePrefs.viewMode ?? "spaces",
+      tabDrawerPinned:
+        localPrefs.tabDrawerPinned ?? remotePrefs.tabDrawerPinned ?? false,
+      lastSyncAt: localPrefs.lastSyncAt ?? remotePrefs.lastSyncAt ?? null,
+    },
+  };
+  const prevSuppress = isDriveSyncSuppressed;
+  isDriveSyncSuppressed = true;
+  try {
+    replaceState(merged);
+  } finally {
+    isDriveSyncSuppressed = prevSuppress;
+  }
+  lastResolvedSpacesHash = computeSpacesHash(getState());
+};
+
+export const setBootstrapSuppress = (value) => {
+  isDriveSyncSuppressed = Boolean(value);
+};
+
 export const schedulePersist = (state) => {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => saveStateToStorage(state), PERSIST_DEBOUNCE_MS);
 };
 
+const flushPushNow = async (immediate) => {
+  const state = pendingPushState;
+  pendingPushState = null;
+  if (!state) return;
+  try {
+    await runWithMutex(async (signal) => {
+      const result = await pushToDrive(state, {
+        signal,
+        allowInteractive: true,
+      });
+      lastResolvedSpacesHash = computeSpacesHash(state);
+      recordSyncTimestamp();
+      return result;
+    });
+    if (immediate) showSnackbar("Google Drive backup complete");
+  } catch (error) {
+    if (immediate && error?.name !== "AbortError") {
+      // pushToDrive already surfaces a snackbar
+    }
+  }
+};
+
+// Called from handleStateChange on every state notification. It is the only
+// caller that can trigger a Drive push, and it only does so for actual
+// content (spaces) changes — not for searchTerm/viewMode/lastSyncAt churn.
 export const scheduleDriveSync = (
   state,
-  { immediate = false, trigger = null, meta = null } = {},
+  { immediate = false, trigger = null } = {},
 ) => {
-  if (isDriveSyncSuppressed) {
-    return;
-  }
+  if (isDriveSyncSuppressed) return;
+  if (getDriveSnapshot().status !== "connected") return;
+  // Until we have successfully resolved Drive state (pulled or seeded),
+  // never push — otherwise a fresh profile would overwrite Drive content.
+  if (lastResolvedSpacesHash === null) return;
 
-  const driveSnapshot = getDriveSnapshot();
-  if (driveSnapshot.status !== "connected") {
-    return;
-  }
+  const spacesHash = computeSpacesHash(state);
+  if (spacesHash === lastResolvedSpacesHash) return;
 
+  pendingPushState = state;
   clearTimeout(driveTimer);
-  const executor = async () => {
-    try {
-      if (trigger === "add-card") {
-        await runDriveSync({ reason: "add-card", localState: state, meta });
-        return;
-      }
-      await pushToDrive(state);
-      if (immediate) showSnackbar("Google Drive backup complete");
-    } catch (error) {
-      console.error(error);
-      showSnackbar("Drive sync failed: " + error.message);
-    }
-  };
 
   if (immediate || trigger === "add-card") {
-    executor();
+    flushPushNow(immediate);
   } else {
-    driveTimer = setTimeout(executor, DRIVE_SYNC_DEBOUNCE_MS);
+    driveTimer = setTimeout(() => flushPushNow(false), DRIVE_SYNC_DEBOUNCE_MS);
   }
 };
 
-const mergeAddedCardsIntoRemote = (
-  remoteState,
-  localState,
-  addedCards = [],
-) => {
-  if (!remoteState || !localState || !Array.isArray(addedCards)) {
-    return remoteState;
-  }
+// Bootstrap / connect-time pull. Drive wins. If Drive is empty but local
+// has content, seed Drive with local instead of wiping local.
+export const pullDriveOnStartup = async ({ reason = "startup" } = {}) => {
+  if (getDriveSnapshot().status !== "connected") return;
+  const isBackground = reason !== "connect" && reason !== "manual";
 
-  const merged = JSON.parse(JSON.stringify(remoteState));
-
-  const remoteHasCard = (cardId) => {
-    if (!cardId) return false;
-    return merged.spaces?.some((space) =>
-      space.boards?.some((board) =>
-        board.cards?.some((card) => card.id === cardId),
-      ),
-    );
-  };
-
-  addedCards.forEach((entry) => {
-    const cardId = entry?.id;
-    if (!cardId || remoteHasCard(cardId)) return;
-
-    const { card } = driveCallbacks.findCardContext(localState, {
-      spaceId: entry.spaceId ?? null,
-      boardId: entry.boardId ?? null,
-      cardId,
-    });
-    if (!card) return;
-
-    let targetSpace =
-      merged.spaces?.find((space) => space.id === entry.spaceId) ??
-      merged.spaces?.[0] ??
-      null;
-    if (!targetSpace) return;
-
-    let targetBoard =
-      targetSpace.boards?.find((board) => board.id === entry.boardId) ??
-      targetSpace.boards?.[0] ??
-      null;
-    if (!targetBoard) return;
-
-    if (!Array.isArray(targetBoard.cards)) {
-      targetBoard.cards = [];
-    }
-    targetBoard.cards.unshift(JSON.parse(JSON.stringify(card)));
-  });
-
-  return merged;
-};
-
-const runDriveSync = async ({
-  reason = "interval",
-  localState = null,
-  meta = null,
-  throwOnError = false,
-} = {}) => {
-  const snapshot = getDriveSnapshot();
-  if (snapshot.status !== "connected") return;
-
-  if (reason === "newtab") {
-    const lastCheckedAt = snapshot.lastCheckedAt
-      ? new Date(snapshot.lastCheckedAt).getTime()
-      : 0;
-    if (
-      lastCheckedAt &&
-      Date.now() - lastCheckedAt < NEWTAB_DRIVE_CHECK_INTERVAL
-    ) {
-      return;
-    }
-  }
-
-  await acquireSyncMutex();
-
-  let lockReleased = false;
-  const releaseLock = () => {
-    if (lockReleased) return;
-    lockReleased = true;
-    releaseSyncMutex();
-  };
-
-  let timedOut = false;
-  const syncAbortController = new AbortController();
-  const timeoutId = setTimeout(() => {
-    timedOut = true;
-    console.error("Drive sync timed out after 30s");
-    syncAbortController.abort();
-    releaseLock();
-  }, 30000);
-
-  try {
-    if (timedOut) {
-      return;
-    }
-
-    const remoteState = await pullFromDrive({
-      markChecked: reason === "newtab",
-      signal: syncAbortController.signal,
+  return await runWithMutex(async (signal) => {
+    const { data: remote } = await pullFromDrive({
+      markChecked: true,
+      signal,
+      allowInteractive: !isBackground,
     });
 
-    if (timedOut) {
-      return;
-    }
+    const localState = getState();
+    const remoteHasContent = stateHasContent(remote);
+    const localHasContent = stateHasContent(localState);
 
-    const resolvedLocalState = localState ?? getState();
-
-    if (reason === "connect" && remoteState) {
-      isDriveSyncSuppressed = true;
-      replaceState(remoteState, { preserveTimestamp: true });
-      isDriveSyncSuppressed = false;
-      return;
-    }
-
-    const remoteTime = remoteState?.lastUpdated
-      ? new Date(remoteState.lastUpdated).getTime()
-      : 0;
-    const localTime = resolvedLocalState?.lastUpdated
-      ? new Date(resolvedLocalState.lastUpdated).getTime()
-      : 0;
-    if (remoteState && remoteTime > localTime) {
-      if (reason === "add-card" && meta?.addedCards?.length) {
-        const mergedState = mergeAddedCardsIntoRemote(
-          remoteState,
-          resolvedLocalState,
-          meta.addedCards,
-        );
-        isDriveSyncSuppressed = true;
-        replaceState(mergedState);
-        isDriveSyncSuppressed = false;
-        await pushToDrive(mergedState, {
-          signal: syncAbortController.signal,
-        });
-      } else {
-        isDriveSyncSuppressed = true;
-        replaceState(remoteState, { preserveTimestamp: true });
-        isDriveSyncSuppressed = false;
+    if (!remoteHasContent && localHasContent) {
+      const seedState = localState;
+      await pushToDrive(seedState, { signal, allowInteractive: !isBackground });
+      lastResolvedSpacesHash = computeSpacesHash(seedState);
+      recordSyncTimestamp();
+      if (reason === "connect") {
+        showSnackbar("Initial sync complete.");
       }
     } else {
-      await pushToDrive(resolvedLocalState, {
-        signal: syncAbortController.signal,
-      });
+      adoptRemoteState(remote);
+      recordSyncTimestamp();
     }
-  } catch (error) {
-    console.error("Google Drive sync failed", error);
-    if (
-      throwOnError ||
-      reason === "manual" ||
-      reason === "add-card" ||
-      reason === "connect"
-    ) {
-      throw error;
+  });
+};
+
+// Periodic background pull. Cheap modifiedTime probe gates the full
+// download. If remote hasn't changed since we last touched the file,
+// no body fetch happens.
+export const pullDrivePeriodic = async ({ force = false } = {}) => {
+  if (getDriveSnapshot().status !== "connected") return;
+
+  return await runWithMutex(async (signal) => {
+    const snapshot = getDriveSnapshot();
+    if (!force && snapshot.lastKnownDriveModifiedTime) {
+      try {
+        const remoteModified = await getDriveFileModifiedTime({
+          signal,
+          allowInteractive: false,
+        });
+        if (
+          remoteModified &&
+          remoteModified <= snapshot.lastKnownDriveModifiedTime
+        ) {
+          return;
+        }
+      } catch {
+        // fall through to full pull
+      }
     }
-  } finally {
-    clearTimeout(timeoutId);
-    releaseLock();
-  }
+
+    let remote;
+    try {
+      ({ data: remote } = await pullFromDrive({
+        markChecked: true,
+        signal,
+        allowInteractive: false,
+      }));
+    } catch {
+      return;
+    }
+
+    const remoteHash = computeSpacesHash(remote);
+    if (remoteHash !== computeSpacesHash(getState())) {
+      adoptRemoteState(remote);
+    } else {
+      lastResolvedSpacesHash = remoteHash;
+    }
+  });
+};
+
+// Manual "Sync now" button. Force-pull then push current state.
+export const runManualSync = async () => {
+  if (getDriveSnapshot().status !== "connected") return;
+  await pullDrivePeriodic({ force: true });
+  pendingPushState = getState();
+  await flushPushNow(false);
 };
 
 export const startDriveBackgroundSync = () => {
   if (driveSyncIntervalId) return;
   driveSyncIntervalId = setInterval(() => {
-    runDriveSync({ reason: "interval" });
+    pullDrivePeriodic();
   }, DRIVE_SYNC_INTERVAL);
-  runDriveSync({ reason: "newtab" });
 };
 
 export const stopDriveBackgroundSync = () => {
@@ -270,6 +331,7 @@ export const stopDriveBackgroundSync = () => {
   saveTimer = null;
   syncQueue = [];
   syncInFlight = false;
+  pendingPushState = null;
 };
 
 export const cleanupDriveUI = () => {
@@ -286,42 +348,48 @@ export const handleDriveUpdate = (snapshot) => {
     startDriveBackgroundSync();
   } else {
     stopDriveBackgroundSync();
-    hasPulledDriveState = false;
+    lastResolvedSpacesHash = null;
   }
   if (driveControl) {
     driveControl.classList.toggle("connected", connected);
   }
 };
 
-export const initDriveUI = (callbacks = {}) => {
-  driveCallbacks = {
-    ...driveCallbacks,
-    ...callbacks,
-  };
-
+export const initDriveUI = () => {
   if (initialized) return;
   initialized = true;
 
-  driveConnectBtn?.addEventListener("click", async () => {
+  driveConnectBtn?.addEventListener("click", async (event) => {
     const snapshot = getDriveSnapshot();
     if (snapshot.status === "connected") {
+      event.stopPropagation();
+      toggleDriveMenu();
       return;
     }
     try {
       await connectDrive();
-      if (!hasPulledDriveState) {
-        try {
-          await runDriveSync({ reason: "connect" });
-          hasPulledDriveState = true;
-        } catch (error) {
-          console.error("Failed to pull Drive data", error);
-          showSnackbar("Failed to load Drive data: " + error.message);
-        }
+      try {
+        await pullDriveOnStartup({ reason: "connect" });
+      } catch {
+        // pullFromDrive already snackbar'd
       }
-      showSnackbar("Connected to Google Drive.");
-      scheduleDriveSync(getState(), { immediate: true });
+      if (lastResolvedSpacesHash !== null) {
+        showSnackbar("Connected to Google Drive.");
+      }
     } catch (error) {
       showSnackbar("Failed to connect to Drive: " + error.message);
+    }
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!driveMenuOpen) return;
+    if (driveControl?.contains(event.target)) return;
+    closeDriveMenu();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && driveMenuOpen) {
+      closeDriveMenu();
     }
   });
 
@@ -333,12 +401,14 @@ export const initDriveUI = (callbacks = {}) => {
     driveMenuSyncBtn.disabled = true;
     const originalText = driveMenuSyncBtn.textContent;
     driveMenuSyncBtn.textContent = "Syncing...";
+    setDriveStatusText("Syncing…");
     showSnackbar("Manually syncing with Google Drive...");
     try {
-      await runDriveSync({ reason: "manual" });
+      await runManualSync();
       showSnackbar("Manual sync with Drive completed.");
     } catch (error) {
       showSnackbar("Drive sync failed: " + error.message);
+      setDriveStatusText("Sync failed — try again");
     } finally {
       driveMenuSyncBtn.disabled = false;
       driveMenuSyncBtn.textContent = originalText;
@@ -349,7 +419,10 @@ export const initDriveUI = (callbacks = {}) => {
     event.stopPropagation();
     await disconnectDrive();
     stopDriveBackgroundSync();
-    hasPulledDriveState = false;
+    lastResolvedSpacesHash = null;
+    closeDriveMenu();
     showSnackbar("Disconnected from Google Drive.");
   });
+
+  refreshDriveStatusFromState();
 };

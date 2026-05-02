@@ -15,10 +15,13 @@ const confirmModalEl = document.getElementById("confirm-modal");
 const confirmMessageEl = document.getElementById("confirm-message");
 const confirmAcceptBtn = document.getElementById("confirm-accept");
 const confirmCancelBtn = document.getElementById("confirm-cancel");
+const shortcutsModalEl = document.getElementById("shortcuts-modal");
 
 let snackbarTimer = null;
 let confirmResolver = null;
 let initialized = false;
+let lastSnackbarUndo = null;
+let activeCardMenu = null;
 
 const mutationCallbacks = {
   addCard: () => {},
@@ -72,21 +75,57 @@ export const hideSnackbar = () => {
   clearTimeout(snackbarTimer);
   snackbarEl?.classList.remove("visible");
   snackbarEl?.setAttribute("aria-hidden", "true");
-  if (snackbarEl) snackbarEl.textContent = "";
+  if (snackbarEl) snackbarEl.replaceChildren();
+  lastSnackbarUndo = null;
 };
 
-export const showSnackbar = (message, duration = SNACKBAR_DURATION_MS) => {
+export const showSnackbar = (message, opts = {}) => {
   if (!message) {
     hideSnackbar();
     return;
   }
+  const options = typeof opts === "number" ? { duration: opts } : (opts ?? {});
+  const duration = options.duration ?? SNACKBAR_DURATION_MS;
+  const action = options.action ?? null;
+
   clearTimeout(snackbarTimer);
+  lastSnackbarUndo = null;
   if (snackbarEl) {
-    snackbarEl.textContent = message;
+    snackbarEl.replaceChildren();
+    const text = document.createElement("span");
+    text.className = "snackbar-text";
+    text.textContent = message;
+    snackbarEl.appendChild(text);
+
+    if (action && typeof action.onClick === "function") {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "snackbar-action";
+      button.textContent = action.label ?? "Undo";
+      const trigger = () => {
+        try {
+          action.onClick();
+        } finally {
+          hideSnackbar();
+        }
+      };
+      button.addEventListener("click", trigger);
+      snackbarEl.appendChild(button);
+      lastSnackbarUndo = trigger;
+    }
+
     snackbarEl.classList.add("visible");
     snackbarEl.setAttribute("aria-hidden", "false");
   }
   snackbarTimer = setTimeout(() => hideSnackbar(), duration);
+};
+
+export const triggerSnackbarUndo = () => {
+  if (typeof lastSnackbarUndo === "function") {
+    lastSnackbarUndo();
+    return true;
+  }
+  return false;
 };
 
 export const openConfirm = (message) =>
@@ -118,8 +157,14 @@ const updateCardFormFields = (type) => {
   }
 };
 
-export const openCardModal = ({ boardId, cardId = null, spaceId = null }) => {
+export const openCardModal = ({
+  boardId,
+  cardId = null,
+  spaceId = null,
+  initialType = null,
+} = {}) => {
   if (!cardForm || !cardModalEl || !cardDeleteBtn) return;
+  const options = { initialType };
 
   const state = getState();
   const { board, card } = findCardContext(state, {
@@ -145,12 +190,14 @@ export const openCardModal = ({ boardId, cardId = null, spaceId = null }) => {
     cardForm.elements.note.value = card.note ?? "";
     cardForm.elements.url.value = card.url ?? "";
     cardForm.elements.tags.value = card.tags?.join(", ") ?? "";
+    cardDeleteBtn.hidden = false;
     cardDeleteBtn.style.display = "inline-flex";
   } else {
     cardForm.reset();
     cardForm.elements.boardId.value = resolvedBoardId;
-    cardForm.elements.type.value = "note";
+    cardForm.elements.type.value = options.initialType ?? "note";
     cardForm.elements.url.value = "";
+    cardDeleteBtn.hidden = true;
     cardDeleteBtn.style.display = "none";
   }
 
@@ -167,6 +214,91 @@ export const closeModal = (modal) => {
   modal?.setAttribute("aria-hidden", "true");
 };
 
+export const openShortcutsSheet = () => {
+  if (!shortcutsModalEl) return;
+  shortcutsModalEl.classList.add("visible");
+  shortcutsModalEl.classList.remove("hidden");
+  shortcutsModalEl.setAttribute("aria-hidden", "false");
+};
+
+export const isInteractionOverlayOpen = (root = document) =>
+  Boolean(root?.querySelector?.(".modal.visible, .card-action-menu"));
+
+export const closeCardActionMenu = () => {
+  if (activeCardMenu) {
+    activeCardMenu.remove();
+    activeCardMenu = null;
+  }
+};
+
+const getCardActionMenuItems = (card, options = {}) => {
+  const items = [];
+  if (!options.hideEdit) {
+    items.push({ action: "edit", label: "Edit" });
+  }
+  if (card.type === "link" && card.url) {
+    items.push({ action: "open", label: "Open in new tab" });
+  }
+  if (!options.hideDelete) {
+    if (items.length) items.push({ separator: true });
+    items.push({ action: "delete", label: "Delete", danger: true });
+  }
+  return items;
+};
+
+export const renderCardActionMenu = (cardEl, card, options = {}) => {
+  closeCardActionMenu();
+  if (!cardEl) return;
+
+  const items = getCardActionMenuItems(card, options);
+  if (!items.some((item) => !item.separator)) return null;
+
+  const menu = document.createElement("div");
+  menu.className = "card-action-menu";
+  menu.setAttribute("role", "menu");
+
+  items.forEach((item) => {
+    if (item.separator) {
+      const sep = document.createElement("div");
+      sep.className = "card-action-menu-separator";
+      menu.appendChild(sep);
+      return;
+    }
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "card-action-menu-item";
+    if (item.danger) button.classList.add("danger");
+    button.dataset.cardAction = item.action;
+    button.textContent = item.label;
+    button.setAttribute("role", "menuitem");
+    menu.appendChild(button);
+  });
+
+  cardEl.appendChild(menu);
+  activeCardMenu = menu;
+
+  const onOutsideClick = (event) => {
+    if (!menu.contains(event.target)) {
+      closeCardActionMenu();
+      document.removeEventListener("click", onOutsideClick, true);
+      document.removeEventListener("keydown", onEsc, true);
+    }
+  };
+  const onEsc = (event) => {
+    if (event.key === "Escape") {
+      closeCardActionMenu();
+      document.removeEventListener("click", onOutsideClick, true);
+      document.removeEventListener("keydown", onEsc, true);
+    }
+  };
+  setTimeout(() => {
+    document.addEventListener("click", onOutsideClick, true);
+    document.addEventListener("keydown", onEsc, true);
+  }, 0);
+
+  return menu;
+};
+
 export const openSpaceModal = (spaceId = null) => {
   if (!spaceForm || !spaceModalEl || !spaceDeleteBtn) return;
   const state = getState();
@@ -177,11 +309,13 @@ export const openSpaceModal = (spaceId = null) => {
       spaceForm.elements.spaceId.value = space.id;
       spaceForm.elements.name.value = space.name;
     }
-    spaceDeleteBtn.style.display =
-      state.spaces.length > 1 ? "inline-flex" : "none";
+    const canDelete = state.spaces.length > 1;
+    spaceDeleteBtn.hidden = !canDelete;
+    spaceDeleteBtn.style.display = canDelete ? "inline-flex" : "none";
   } else {
     spaceForm.reset();
     spaceForm.elements.spaceId.value = "";
+    spaceDeleteBtn.hidden = true;
     spaceDeleteBtn.style.display = "none";
   }
 
@@ -194,12 +328,15 @@ const handleEscapeKey = (event) => {
   if (event.key !== "Escape") return;
   if (cardModalEl?.classList.contains("visible")) closeModal(cardModalEl);
   if (spaceModalEl?.classList.contains("visible")) closeModal(spaceModalEl);
+  if (shortcutsModalEl?.classList.contains("visible"))
+    closeModal(shortcutsModalEl);
   if (confirmModalEl?.classList.contains("visible")) {
     if (confirmResolver) {
       confirmResolver(false);
     }
     closeConfirm();
   }
+  closeCardActionMenu();
 };
 
 export const initModals = (callbacks = {}) => {
@@ -304,13 +441,12 @@ export const initModals = (callbacks = {}) => {
     const targetSpaceId =
       findCardContext(getState(), { boardId, cardId }).space?.id ?? null;
 
+    closeModal(cardModalEl);
     mutationCallbacks.deleteCard({
       cardId,
       boardId,
       spaceId: targetSpaceId,
     });
-    closeModal(cardModalEl);
-    showSnackbar("Card deleted.");
   });
 
   cardModalEl?.addEventListener("click", (event) => {
@@ -346,9 +482,8 @@ export const initModals = (callbacks = {}) => {
       return;
     }
 
-    mutationCallbacks.deleteSpace({ spaceId });
     closeModal(spaceModalEl);
-    showSnackbar("Space deleted.");
+    mutationCallbacks.deleteSpace({ spaceId });
   });
 
   spaceModalEl?.addEventListener("click", (event) => {
@@ -378,6 +513,12 @@ export const initModals = (callbacks = {}) => {
       confirmResolver(false);
     }
     closeConfirm();
+  });
+
+  shortcutsModalEl?.addEventListener("click", (event) => {
+    if (event.target.dataset.close === "shortcuts") {
+      closeModal(shortcutsModalEl);
+    }
   });
 
   window.addEventListener("keydown", handleEscapeKey);

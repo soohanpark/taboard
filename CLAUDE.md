@@ -20,12 +20,12 @@
 
 ## Project Overview
 
-**Taboard** is a Chrome Extension (Manifest V3) that replaces the new tab page with a tab manager + personal kanban board.
+**Taboard** is a Chrome Extension (Manifest V3) that replaces the new tab page with a tab manager + personal boards.
 
 ### Core Features
 - Tab drawer (sidebar): view/search/drag tabs to board
 - Spaces/Boards/Cards hierarchy with link/note/todo card types
-- Kanban board sidebar navigation for quick space/board switching; drag cards or tabs onto sidebar boards to move/save them
+- Boards sidebar navigation for quick space/board switching; drag cards or tabs onto sidebar boards to move/save them
 - Favorites view, bulk open, keyboard shortcuts
 - Google Drive sync (optional, auto every 30 min)
 
@@ -166,3 +166,12 @@ All state mutations create new objects; no direct mutation.
 ---
 
 *For detailed information, navigate to the linked documents above.*
+
+## graphify
+
+This project has a graphify knowledge graph at graphify-out/.
+
+Rules:
+- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
+- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- After modifying code files in this session, run `python3 -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"` to keep the graph current

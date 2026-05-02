@@ -201,6 +201,7 @@ export const moveBoard = (boardId, targetIndex, spaceId = null) => {
         Math.min(targetIndex, space.boards.length),
       );
       space.boards.splice(normalizedIndex, 0, board);
+      board.updatedAt = new Date().toISOString();
     },
     { action: "move-board" },
   );
@@ -217,6 +218,7 @@ export const moveSpace = (spaceId, targetIndex) => {
         Math.min(targetIndex, draft.spaces.length),
       );
       draft.spaces.splice(normalizedIndex, 0, space);
+      space.updatedAt = new Date().toISOString();
     },
     { action: "move-space" },
   );

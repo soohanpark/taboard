@@ -13,25 +13,45 @@ const USER_INFO_ENDPOINT = "https://www.googleapis.com/oauth2/v2/userinfo";
 // TODO: Create an OAuth client ID in Google Cloud Console, then replace manifest.json oauth2.client_id with the real value.
 
 const listeners = new Set();
-let driveState = {
+const INITIAL_DRIVE_STATE = Object.freeze({
   status: "disconnected",
   user: null,
   fileId: null,
   lastSyncedAt: null,
   lastCheckedAt: null,
+  lastKnownDriveModifiedTime: null,
   syncing: false,
   lastError: null,
+});
+
+let driveState = { ...INITIAL_DRIVE_STATE };
+
+const setDriveState = (patch) => {
+  driveState = { ...driveState, ...patch };
 };
 
 const emit = () => {
+  const snapshot = Object.freeze({ ...driveState });
   for (const listener of listeners) {
-    listener({ ...driveState });
+    listener(snapshot);
   }
 };
 
 const persistMeta = async () => {
-  const { fileId, lastSyncedAt, lastCheckedAt, user } = driveState;
-  await saveDriveMetadata({ fileId, lastSyncedAt, lastCheckedAt, user });
+  const {
+    fileId,
+    lastSyncedAt,
+    lastCheckedAt,
+    user,
+    lastKnownDriveModifiedTime,
+  } = driveState;
+  await saveDriveMetadata({
+    fileId,
+    lastSyncedAt,
+    lastCheckedAt,
+    user,
+    lastKnownDriveModifiedTime,
+  });
 };
 
 const getAuthToken = (interactive = false) =>
@@ -134,7 +154,7 @@ const ensureDriveFile = async (token, signal = null) => {
     signal,
   );
   if (result?.files?.length) {
-    driveState.fileId = result.files[0].id;
+    setDriveState({ fileId: result.files[0].id });
     await persistMeta();
     return driveState.fileId;
   }
@@ -167,7 +187,7 @@ const ensureDriveFile = async (token, signal = null) => {
     },
     signal,
   );
-  driveState.fileId = created.id;
+  setDriveState({ fileId: created.id });
   await persistMeta();
   return created.id;
 };
@@ -175,15 +195,18 @@ const ensureDriveFile = async (token, signal = null) => {
 const uploadData = async (token, fileId, data, signal = null) => {
   let response;
   try {
-    response = await fetch(`${DRIVE_UPLOAD_API}/${fileId}?uploadType=media`, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
+    response = await fetch(
+      `${DRIVE_UPLOAD_API}/${fileId}?uploadType=media&fields=modifiedTime`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
+        signal,
       },
-      body: JSON.stringify(data),
-      signal,
-    });
+    );
   } catch (error) {
     if (error?.name === "AbortError") {
       throw error;
@@ -195,12 +218,32 @@ const uploadData = async (token, fileId, data, signal = null) => {
 
   if (!response.ok) {
     if (response.status === 404) {
-      driveState.fileId = null;
+      setDriveState({ fileId: null });
     }
     throw createDriveError(`Failed to upload data (${response.status}).`, {
       status: response.status,
     });
   }
+
+  try {
+    const json = await response.json();
+    return { modifiedTime: json?.modifiedTime ?? null };
+  } catch {
+    return { modifiedTime: null };
+  }
+};
+
+const fetchModifiedTime = async (token, fileId, signal = null) => {
+  const json = await fetchJson(
+    `${DRIVE_API}/${fileId}?fields=modifiedTime`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    signal,
+  );
+  return json?.modifiedTime ?? null;
 };
 
 const downloadData = async (token, fileId, signal = null) => {
@@ -216,7 +259,7 @@ const downloadData = async (token, fileId, signal = null) => {
     );
   } catch (error) {
     if (error?.status === 404) {
-      driveState.fileId = null;
+      setDriveState({ fileId: null });
     }
     throw error;
   }
@@ -242,14 +285,14 @@ const fetchUserProfile = async (token, signal = null) => {
 export const initDrive = async () => {
   const meta = await loadDriveMetadata();
   if (meta?.fileId) {
-    driveState = {
-      ...driveState,
+    setDriveState({
       status: "connected",
       fileId: meta.fileId,
       lastSyncedAt: meta.lastSyncedAt ?? null,
       lastCheckedAt: meta.lastCheckedAt ?? null,
+      lastKnownDriveModifiedTime: meta.lastKnownDriveModifiedTime ?? null,
       user: meta.user ?? null,
-    };
+    });
     emit();
   }
 };
@@ -263,22 +306,21 @@ export const subscribeDrive = (listener) => {
 export const getDriveSnapshot = () => ({ ...driveState });
 
 export const connectDrive = async () => {
-  driveState.lastError = null;
+  setDriveState({ lastError: null });
   try {
     const token = await getAuthToken(true);
     const profile = await fetchUserProfile(token);
     const fileId = await ensureDriveFile(token);
-    driveState = {
-      ...driveState,
+    setDriveState({
       status: "connected",
       user: profile,
       fileId,
-    };
+    });
     await persistMeta();
     emit();
     return { token, fileId };
   } catch (error) {
-    driveState.lastError = error.message;
+    setDriveState({ lastError: error.message });
     emit();
     showSnackbar("Failed to connect to Drive: " + error.message);
     throw error;
@@ -288,15 +330,7 @@ export const connectDrive = async () => {
 export const disconnectDrive = async () => {
   try {
     await clearDriveMetadata();
-    driveState = {
-      status: "disconnected",
-      user: null,
-      fileId: null,
-      lastSyncedAt: null,
-      lastCheckedAt: null,
-      syncing: false,
-      lastError: null,
-    };
+    setDriveState(INITIAL_DRIVE_STATE);
     emit();
 
     if (chrome?.identity?.getAuthToken) {
@@ -316,7 +350,7 @@ export const disconnectDrive = async () => {
       });
     }
   } catch (error) {
-    console.error("Failed to disconnect Drive", error);
+    showSnackbar("Failed to disconnect Drive.");
   }
 };
 
@@ -329,25 +363,30 @@ const removeCachedToken = (token) =>
     chrome.identity.removeCachedAuthToken({ token }, () => resolve());
   });
 
-const withToken = async (interactive = false) => {
+const withFreshToken = async (fn, allowInteractive = true) => {
+  let token;
   try {
-    return await getAuthToken(interactive);
-  } catch (error) {
-    if (!interactive) {
-      return await getAuthToken(true);
+    token = await getAuthToken(false);
+  } catch {
+    if (!allowInteractive) {
+      throw createDriveError(
+        "Auth token unavailable. Re-authenticate manually.",
+      );
     }
-    throw error;
+    token = await getAuthToken(true);
   }
-};
-
-const withFreshToken = async (fn) => {
-  const token = await withToken(false);
   try {
     return await fn(token);
   } catch (error) {
     if (error?.status === 401) {
       await removeCachedToken(token);
-      const freshToken = await withToken(true);
+      if (!allowInteractive) {
+        throw createDriveError(
+          "Auth token expired. Re-authenticate manually.",
+          { status: 401, cause: error },
+        );
+      }
+      const freshToken = await getAuthToken(true);
       return await fn(freshToken);
     }
     throw error;
@@ -365,29 +404,34 @@ const stripFavicons = (state) => {
 
 export const pushToDrive = async (state, options = {}) => {
   if (driveState.status !== "connected") {
-    return;
+    return { modifiedTime: null };
   }
 
-  const { signal = null } = options;
+  const { signal = null, allowInteractive = true } = options;
 
-  driveState.syncing = true;
+  setDriveState({ syncing: true });
   emit();
 
   try {
-    await withRetry(async () => {
-      await withFreshToken(async (token) => {
+    const result = await withRetry(async () => {
+      return await withFreshToken(async (token) => {
         const fileId = await ensureDriveFile(token, signal);
-        await uploadData(token, fileId, stripFavicons(state), signal);
-      });
+        return await uploadData(token, fileId, stripFavicons(state), signal);
+      }, allowInteractive);
     });
-    driveState.lastSyncedAt = new Date().toISOString();
-    driveState.syncing = false;
-    driveState.lastError = null;
+    const modifiedTime = result?.modifiedTime ?? null;
+    setDriveState({
+      lastSyncedAt: new Date().toISOString(),
+      lastKnownDriveModifiedTime:
+        modifiedTime ?? driveState.lastKnownDriveModifiedTime,
+      syncing: false,
+      lastError: null,
+    });
     await persistMeta();
     emit();
+    return { modifiedTime };
   } catch (error) {
-    driveState.syncing = false;
-    driveState.lastError = error.message;
+    setDriveState({ syncing: false, lastError: error.message });
     emit();
     showSnackbar("Drive sync failed: " + error.message);
     throw error;
@@ -399,35 +443,50 @@ export const pullFromDrive = async (options = {}) => {
     throw new Error("Drive is not connected.");
   }
 
-  driveState.syncing = true;
+  const { signal = null, allowInteractive = true } = options;
+
+  setDriveState({ syncing: true });
   emit();
 
   try {
-    const { signal = null } = options;
-    const data = await withRetry(async () => {
+    const result = await withRetry(async () => {
       return await withFreshToken(async (token) => {
         const fileId = await ensureDriveFile(token, signal);
-        return downloadData(token, fileId, signal);
-      });
+        const data = await downloadData(token, fileId, signal);
+        const modifiedTime = await fetchModifiedTime(token, fileId, signal);
+        return { data, modifiedTime };
+      }, allowInteractive);
     });
-    if (options.markChecked) {
-      driveState.lastCheckedAt = new Date().toISOString();
-      await persistMeta();
-    }
+    const { data, modifiedTime } = result;
     if (!data || typeof data !== "object" || !Array.isArray(data.spaces)) {
-      throw createDriveError(
-        "Invalid data format received from Drive.",
-      );
+      throw createDriveError("Invalid data format received from Drive.");
     }
-    driveState.syncing = false;
-    driveState.lastError = null;
+    const patch = {
+      syncing: false,
+      lastError: null,
+      lastKnownDriveModifiedTime:
+        modifiedTime ?? driveState.lastKnownDriveModifiedTime,
+    };
+    if (options.markChecked) {
+      patch.lastCheckedAt = new Date().toISOString();
+    }
+    setDriveState(patch);
+    await persistMeta();
     emit();
-    return data;
+    return { data, modifiedTime };
   } catch (error) {
-    driveState.syncing = false;
-    driveState.lastError = error.message;
+    setDriveState({ syncing: false, lastError: error.message });
     emit();
     showSnackbar("Failed to load Drive data: " + error.message);
     throw error;
   }
+};
+
+export const getDriveFileModifiedTime = async (options = {}) => {
+  if (driveState.status !== "connected") return null;
+  const { signal = null, allowInteractive = false } = options;
+  return await withFreshToken(async (token) => {
+    const fileId = await ensureDriveFile(token, signal);
+    return fetchModifiedTime(token, fileId, signal);
+  }, allowInteractive);
 };
