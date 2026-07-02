@@ -1,5 +1,9 @@
 import { getState, replaceState, updateState } from "./state.js";
-import { saveStateToStorage } from "./storage.js";
+import {
+  saveStateToStorage,
+  loadDriveDirtyFlag,
+  saveDriveDirtyFlag,
+} from "./storage.js";
 import {
   connectDrive,
   disconnectDrive,
@@ -8,7 +12,7 @@ import {
   pullFromDrive,
   pushToDrive,
 } from "./drive.js";
-import { showSnackbar } from "./modals.js";
+import { openConfirm, showSnackbar } from "./modals.js";
 import {
   PERSIST_DEBOUNCE_MS,
   DRIVE_SYNC_DEBOUNCE_MS,
@@ -23,6 +27,7 @@ const driveMenuSyncBtn = document.getElementById("drive-menu-sync");
 const driveMenuDisconnectBtn = document.getElementById("drive-menu-disconnect");
 
 let saveTimer = null;
+let pendingSaveState = null;
 let driveTimer = null;
 let driveSyncIntervalId = null;
 let syncQueue = [];
@@ -40,10 +45,22 @@ const SYNC_TIMEOUT_MS = 30000;
 
 const computeSpacesHash = (state) => JSON.stringify(state?.spaces ?? []);
 
-const stateHasContent = (state) =>
+// Any user structure counts as content, not just cards — adopting an empty
+// remote file must never wipe a local space/board layout that has no cards yet.
+const stateHasContent = (state) => (state?.spaces ?? []).length > 0;
+
+const stateHasCards = (state) =>
   (state?.spaces ?? []).some((space) =>
     (space?.boards ?? []).some((board) => (board?.cards ?? []).length > 0),
   );
+
+// In-memory mirror so repeated content changes don't rewrite the same value.
+let driveDirtyMirror = null;
+const setDirtyFlag = (dirty) => {
+  if (driveDirtyMirror === dirty) return;
+  driveDirtyMirror = dirty;
+  saveDriveDirtyFlag(dirty);
+};
 
 const formatRelativeTime = (timestamp) => {
   if (!timestamp) return "Not synced yet";
@@ -176,8 +193,25 @@ export const setBootstrapSuppress = (value) => {
 };
 
 export const schedulePersist = (state) => {
+  if (!state) return;
+  // Never persist transient render metadata.
+  const { meta: _meta, ...persistable } = state;
+  pendingSaveState = persistable;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => saveStateToStorage(state), PERSIST_DEBOUNCE_MS);
+  saveTimer = setTimeout(() => {
+    pendingSaveState = null;
+    saveStateToStorage(persistable);
+  }, PERSIST_DEBOUNCE_MS);
+};
+
+// Write a still-debounced save immediately (e.g. on unload) instead of
+// dropping it — cancelling here would lose the last user change.
+export const flushPersist = () => {
+  if (!pendingSaveState) return;
+  clearTimeout(saveTimer);
+  const state = pendingSaveState;
+  pendingSaveState = null;
+  saveStateToStorage(state);
 };
 
 const flushPushNow = async (immediate) => {
@@ -192,6 +226,7 @@ const flushPushNow = async (immediate) => {
       });
       lastResolvedSpacesHash = computeSpacesHash(state);
       recordSyncTimestamp();
+      setDirtyFlag(false);
       return result;
     });
     if (immediate) showSnackbar("Google Drive backup complete");
@@ -209,6 +244,7 @@ export const scheduleDriveSync = (
   state,
   { immediate = false, trigger = null } = {},
 ) => {
+  if (!state) return;
   if (isDriveSyncSuppressed) return;
   if (getDriveSnapshot().status !== "connected") return;
   // Until we have successfully resolved Drive state (pulled or seeded),
@@ -218,7 +254,14 @@ export const scheduleDriveSync = (
   const spacesHash = computeSpacesHash(state);
   if (spacesHash === lastResolvedSpacesHash) return;
 
-  pendingPushState = state;
+  // Persist the unsynced-change marker immediately: if the tab closes before
+  // the debounced push fires, the next startup pushes local first instead of
+  // letting the Drive-first pull revert the change.
+  setDirtyFlag(true);
+
+  // Strip transient render metadata before it reaches Drive.
+  const { meta: _meta, ...pushable } = state;
+  pendingPushState = pushable;
   clearTimeout(driveTimer);
 
   if (immediate || trigger === "add-card") {
@@ -228,36 +271,85 @@ export const scheduleDriveSync = (
   }
 };
 
-// Bootstrap / connect-time pull. Drive wins. If Drive is empty but local
-// has content, seed Drive with local instead of wiping local.
+// Pure decision for pullDriveOnStartup (exported for tests). Drive wins,
+// with two exceptions: an empty remote is seeded from local, and a local
+// change whose push never fired (dirty flag) is pushed first — but only when
+// no other device has written to Drive since our last sync. Real two-sided
+// conflicts stay Drive-first. Connecting over real local cards asks first.
+export const resolveStartupSyncAction = ({
+  remoteHasContent,
+  localHasContent,
+  localHasCards,
+  dirty,
+  remoteUnchangedSinceLastSync,
+  contentDiffers,
+  reason,
+}) => {
+  if (!remoteHasContent && localHasContent) return "seed";
+  if (dirty && localHasContent && remoteUnchangedSinceLastSync)
+    return "push-local";
+  if (reason === "connect" && localHasCards && contentDiffers)
+    return "confirm-adopt";
+  return "adopt";
+};
+
+// Bootstrap / connect-time pull; see resolveStartupSyncAction for the rules.
 export const pullDriveOnStartup = async ({ reason = "startup" } = {}) => {
   if (getDriveSnapshot().status !== "connected") return;
   const isBackground = reason !== "connect" && reason !== "manual";
 
-  return await runWithMutex(async (signal) => {
-    const { data: remote } = await pullFromDrive({
+  const outcome = await runWithMutex(async (signal) => {
+    const lastKnownModified = getDriveSnapshot().lastKnownDriveModifiedTime;
+    const { data: remote, modifiedTime } = await pullFromDrive({
       markChecked: true,
       signal,
       allowInteractive: !isBackground,
     });
 
     const localState = getState();
-    const remoteHasContent = stateHasContent(remote);
-    const localHasContent = stateHasContent(localState);
+    const action = resolveStartupSyncAction({
+      remoteHasContent: stateHasContent(remote),
+      localHasContent: stateHasContent(localState),
+      localHasCards: stateHasCards(localState),
+      dirty: await loadDriveDirtyFlag(),
+      remoteUnchangedSinceLastSync: Boolean(
+        lastKnownModified && modifiedTime && modifiedTime <= lastKnownModified,
+      ),
+      contentDiffers:
+        computeSpacesHash(remote) !== computeSpacesHash(localState),
+      reason,
+    });
 
-    if (!remoteHasContent && localHasContent) {
-      const seedState = localState;
-      await pushToDrive(seedState, { signal, allowInteractive: !isBackground });
-      lastResolvedSpacesHash = computeSpacesHash(seedState);
+    if (action === "seed" || action === "push-local") {
+      await pushToDrive(localState, {
+        signal,
+        allowInteractive: !isBackground,
+      });
+      lastResolvedSpacesHash = computeSpacesHash(localState);
       recordSyncTimestamp();
-      if (reason === "connect") {
+      if (reason === "connect" && action === "seed") {
         showSnackbar("Initial sync complete.");
       }
     } else {
+      if (action === "confirm-adopt") {
+        const ok = await openConfirm(
+          "Google Drive already has data. Replace this device's boards with the Drive version? Cancel keeps everything as-is and disconnects.",
+        );
+        if (!ok) return "declined";
+      }
       adoptRemoteState(remote);
       recordSyncTimestamp();
     }
+    setDirtyFlag(false);
+    return "synced";
   });
+
+  // Disconnect outside the mutex: disconnectDrive triggers
+  // stopDriveBackgroundSync, which force-resets the mutex state.
+  if (outcome === "declined") {
+    await disconnectDrive();
+    showSnackbar("Drive connection cancelled — nothing was changed.");
+  }
 };
 
 // Periodic background pull. Cheap modifiedTime probe gates the full
@@ -326,9 +418,7 @@ export const stopDriveBackgroundSync = () => {
     driveSyncIntervalId = null;
   }
   clearTimeout(driveTimer);
-  clearTimeout(saveTimer);
   driveTimer = null;
-  saveTimer = null;
   syncQueue = [];
   syncInFlight = false;
   pendingPushState = null;
@@ -336,6 +426,7 @@ export const stopDriveBackgroundSync = () => {
 
 export const cleanupDriveUI = () => {
   stopDriveBackgroundSync();
+  flushPersist();
 };
 
 export const handleDriveUpdate = (snapshot) => {

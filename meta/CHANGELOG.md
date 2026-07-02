@@ -14,6 +14,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Drag cards onto sidebar boards to move them between boards quickly
 - UX overhaul (2026-04): tab drawer pin (T), 5s undo for deletes, single-key shortcuts (N/B/[/]/F/?), search match counts in sidebar, tag-click filter, "Add card" inline type chips, Drive menu click popover with last sync time
 
+### Added
+- Connecting Drive on a device that already has cards now asks before replacing them with the Drive version; cancelling disconnects without changing anything
+
+### Fixed
+- Card action menu is no longer covered by the cards below it
+- Pending debounced local save is now flushed (not cancelled) on unload and when the tab is hidden — closing/discarding the tab right after a change no longer loses it
+- A local change whose Drive push never fired (e.g. tab closed within the sync debounce) is pushed on next startup instead of being reverted by the Drive-first pull — unless another device wrote to Drive in between (then Drive still wins)
+- Transient render `meta` no longer leaks into chrome.storage/Drive (stale `meta.action` made every later update behave like an add-card)
+- Connecting Drive no longer wipes local spaces/boards that have no cards yet (structure counts as content)
+- `activeSpaceId` is re-validated after adopting remote state (deleted-on-another-device space left no tab highlighted)
+- Pretendard webfont actually loads now (inline `onload` was blocked by extension CSP); removed unused Inter font fetch
+- Alt+1–9 board switching works on macOS (Option+digit types special characters; now keyed off `event.code`)
+- Tab drawer no longer re-renders mid-drag (could detach the dragged item) and refreshes after a drag ends instead of staying stale
+- Card links open with `noopener,noreferrer` so target pages can't script the new tab page
+
 ### 변경됨 — "kanban" 명칭을 "boards"로 통일
 
 ---
