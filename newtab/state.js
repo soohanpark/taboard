@@ -135,6 +135,31 @@ export const createDefaultState = () => {
   };
 };
 
+// Content-only signature: ids, accents, and timestamps are random per
+// install, so compare just the user-visible text and card flags.
+const contentSignature = (state) =>
+  JSON.stringify(
+    (state?.spaces ?? []).map((space) => [
+      space?.name,
+      (space?.boards ?? []).map((board) => [
+        board?.name,
+        (board?.cards ?? []).map((card) => [
+          card?.type,
+          card?.title,
+          card?.note ?? "",
+          card?.url ?? "",
+          Boolean(card?.done),
+          Boolean(card?.favorite),
+        ]),
+      ]),
+    ]),
+  );
+
+// True while local is still the untouched fresh-install template — its
+// sample cards are not user content worth a destructive-replace warning.
+export const isDefaultSeedState = (state) =>
+  contentSignature(state) === contentSignature(createDefaultState());
+
 const PREFERENCE_DEFAULTS = {
   searchTerm: "",
   viewMode: "spaces",

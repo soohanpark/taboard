@@ -1203,13 +1203,9 @@ window.addEventListener("keydown", (event) => {
       }
       // event.code, not event.key: Option+digit types "¡™£…" on macOS.
       // Exclude ctrl/meta so Windows AltGr (ctrl+alt) doesn't match.
-      if (
-        event.altKey &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        /^Digit[1-9]$/.test(event.code)
-      ) {
-        const idx = Number(event.code.slice(5)) - 1;
+      const digitMatch = /^(?:Digit|Numpad)([1-9])$/.exec(event.code);
+      if (event.altKey && !event.ctrlKey && !event.metaKey && digitMatch) {
+        const idx = Number(digitMatch[1]) - 1;
         if (idx < space.boards.length) {
           event.preventDefault();
           updateState((draft) => {

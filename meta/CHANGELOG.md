@@ -13,9 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 - Drag cards onto sidebar boards to move them between boards quickly
 - UX overhaul (2026-04): tab drawer pin (T), 5s undo for deletes, single-key shortcuts (N/B/[/]/F/?), search match counts in sidebar, tag-click filter, "Add card" inline type chips, Drive menu click popover with last sync time
-
-### Added
-- Connecting Drive on a device that already has cards now asks before replacing them with the Drive version; cancelling disconnects without changing anything
+- Connecting Drive on a device that already has cards now asks before replacing them with the Drive version; cancelling disconnects without changing anything (the untouched fresh-install sample boards don't trigger the warning)
 
 ### Fixed
 - Card action menu is no longer covered by the cards below it
@@ -28,6 +26,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Alt+1–9 board switching works on macOS (Option+digit types special characters; now keyed off `event.code`)
 - Tab drawer no longer re-renders mid-drag (could detach the dragged item) and refreshes after a drag ends instead of staying stale
 - Card links open with `noopener,noreferrer` so target pages can't script the new tab page
+- The unsynced-change marker now survives an edit made while a Drive push is in flight — two quick edits followed by closing the tab no longer lose the second one
+- Edits made in a session whose startup Drive pull failed (e.g. offline) are marked unsynced and pushed by the next periodic sync, instead of push staying disabled all session and the next startup reverting everything
+- The connect-time replace warning no longer fires when local and Drive content are actually identical (pushes strip favicons, so every comparison used to differ)
+- Adopting Drive data cancels any still-debounced local push so it can't overwrite the just-adopted data; the connect confirm dialog no longer blocks background syncs while open
+- Alt+Numpad 1–9 switches boards like the top-row digits; the unsynced marker is cleared on disconnect and kept consistent across multiple open new-tab pages
 
 ### 변경됨 — "kanban" 명칭을 "boards"로 통일
 

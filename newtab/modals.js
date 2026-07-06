@@ -130,6 +130,8 @@ export const triggerSnackbarUndo = () => {
 
 export const openConfirm = (message) =>
   new Promise((resolve) => {
+    // A second confirm supersedes the first; settle it so no caller hangs.
+    confirmResolver?.(false);
     confirmResolver = resolve;
     if (confirmMessageEl) confirmMessageEl.textContent = message;
     confirmModalEl?.classList.remove("hidden");

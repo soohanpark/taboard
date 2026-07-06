@@ -1,8 +1,14 @@
-import { getState, replaceState, updateState } from "./state.js";
+import {
+  getState,
+  isDefaultSeedState,
+  replaceState,
+  updateState,
+} from "./state.js";
 import {
   saveStateToStorage,
   loadDriveDirtyFlag,
   saveDriveDirtyFlag,
+  onDriveDirtyFlagChanged,
 } from "./storage.js";
 import {
   connectDrive,
@@ -11,6 +17,7 @@ import {
   getDriveSnapshot,
   pullFromDrive,
   pushToDrive,
+  stripFavicons,
 } from "./drive.js";
 import { openConfirm, showSnackbar } from "./modals.js";
 import {
@@ -45,6 +52,18 @@ const SYNC_TIMEOUT_MS = 30000;
 
 const computeSpacesHash = (state) => JSON.stringify(state?.spaces ?? []);
 
+// Pushes strip favicons while local normalization guarantees them, so a
+// remote state never hashes equal to a local one under computeSpacesHash.
+// Any local-vs-remote content comparison must use this instead.
+const comparableSpacesHash = (state) => computeSpacesHash(stripFavicons(state));
+
+// Spaces hash of the last system-applied state (storage load or remote
+// adopt). While pushes are gated (lastResolvedSpacesHash === null, e.g. the
+// startup pull failed), edits are diffed against this baseline so the dirty
+// marker still gets written and the session's changes survive the next
+// Drive-first startup.
+let dirtyBaselineSpacesHash = null;
+
 // Any user structure counts as content, not just cards — adopting an empty
 // remote file must never wipe a local space/board layout that has no cards yet.
 const stateHasContent = (state) => (state?.spaces ?? []).length > 0;
@@ -60,6 +79,16 @@ const setDirtyFlag = (dirty) => {
   if (driveDirtyMirror === dirty) return;
   driveDirtyMirror = dirty;
   saveDriveDirtyFlag(dirty);
+};
+
+// A newer edit may land while a push or pull is in flight; only clear the
+// dirty marker when the current state is what Drive now holds. (A simple
+// "clear after push" would drop the marker for the in-flight edit and let
+// the next Drive-first startup revert it.)
+const clearDirtyIfSynced = () => {
+  if (computeSpacesHash(getState()) === lastResolvedSpacesHash) {
+    setDirtyFlag(false);
+  }
 };
 
 const formatRelativeTime = (timestamp) => {
@@ -160,6 +189,10 @@ const runWithMutex = async (fn) => {
 // Wraps replaceState in the suppress flag so the resulting state-change
 // notification does not schedule a push back to Drive.
 const adoptRemoteState = (remote) => {
+  // Drive-first: adopting remote supersedes any not-yet-pushed local edit.
+  // An armed debounce push would otherwise overwrite the just-adopted data.
+  clearTimeout(driveTimer);
+  pendingPushState = null;
   const local = getState();
   const localPrefs = local?.preferences ?? {};
   const remotePrefs = remote?.preferences ?? {};
@@ -226,7 +259,7 @@ const flushPushNow = async (immediate) => {
       });
       lastResolvedSpacesHash = computeSpacesHash(state);
       recordSyncTimestamp();
-      setDirtyFlag(false);
+      clearDirtyIfSynced();
       return result;
     });
     if (immediate) showSnackbar("Google Drive backup complete");
@@ -245,13 +278,29 @@ export const scheduleDriveSync = (
   { immediate = false, trigger = null } = {},
 ) => {
   if (!state) return;
-  if (isDriveSyncSuppressed) return;
+  const spacesHash = computeSpacesHash(state);
+  if (isDriveSyncSuppressed) {
+    // Suppressed notifications carry system-applied states (bootstrap load,
+    // remote adopt) — exactly the baseline user edits are diffed against.
+    dirtyBaselineSpacesHash = spacesHash;
+    return;
+  }
   if (getDriveSnapshot().status !== "connected") return;
   // Until we have successfully resolved Drive state (pulled or seeded),
   // never push — otherwise a fresh profile would overwrite Drive content.
-  if (lastResolvedSpacesHash === null) return;
+  // Content edits still mark the dirty flag so a failed startup pull can't
+  // silently lose the session's changes: they push once the gate opens
+  // (pullDrivePeriodic) or on the next startup via push-local.
+  if (lastResolvedSpacesHash === null) {
+    if (
+      dirtyBaselineSpacesHash !== null &&
+      spacesHash !== dirtyBaselineSpacesHash
+    ) {
+      setDirtyFlag(true);
+    }
+    return;
+  }
 
-  const spacesHash = computeSpacesHash(state);
   if (spacesHash === lastResolvedSpacesHash) return;
 
   // Persist the unsynced-change marker immediately: if the tab closes before
@@ -276,6 +325,9 @@ export const scheduleDriveSync = (
 // change whose push never fired (dirty flag) is pushed first — but only when
 // no other device has written to Drive since our last sync. Real two-sided
 // conflicts stay Drive-first. Connecting over real local cards asks first.
+// Deliberate: dirty with NO local content (the last action deleted every
+// space) still adopts — resurrecting on restart beats silently propagating
+// an accidental wipe to every synced device.
 export const resolveStartupSyncAction = ({
   remoteHasContent,
   localHasContent,
@@ -310,15 +362,22 @@ export const pullDriveOnStartup = async ({ reason = "startup" } = {}) => {
     const action = resolveStartupSyncAction({
       remoteHasContent: stateHasContent(remote),
       localHasContent: stateHasContent(localState),
-      localHasCards: stateHasCards(localState),
+      // The untouched fresh-install template is not user content: adopting
+      // over its sample cards needs no destructive-replace warning.
+      localHasCards:
+        stateHasCards(localState) && !isDefaultSeedState(localState),
       dirty: await loadDriveDirtyFlag(),
       remoteUnchangedSinceLastSync: Boolean(
         lastKnownModified && modifiedTime && modifiedTime <= lastKnownModified,
       ),
       contentDiffers:
-        computeSpacesHash(remote) !== computeSpacesHash(localState),
+        comparableSpacesHash(remote) !== comparableSpacesHash(localState),
       reason,
     });
+
+    // The confirm dialog waits on the user; answer it outside the mutex so
+    // an unanswered dialog cannot block queued background syncs.
+    if (action === "confirm-adopt") return { needsConfirm: true, remote };
 
     if (action === "seed" || action === "push-local") {
       await pushToDrive(localState, {
@@ -331,25 +390,30 @@ export const pullDriveOnStartup = async ({ reason = "startup" } = {}) => {
         showSnackbar("Initial sync complete.");
       }
     } else {
-      if (action === "confirm-adopt") {
-        const ok = await openConfirm(
-          "Google Drive already has data. Replace this device's boards with the Drive version? Cancel keeps everything as-is and disconnects.",
-        );
-        if (!ok) return "declined";
-      }
       adoptRemoteState(remote);
       recordSyncTimestamp();
     }
-    setDirtyFlag(false);
-    return "synced";
+    clearDirtyIfSynced();
+    return { synced: true };
   });
 
-  // Disconnect outside the mutex: disconnectDrive triggers
-  // stopDriveBackgroundSync, which force-resets the mutex state.
-  if (outcome === "declined") {
+  if (!outcome?.needsConfirm) return;
+
+  const ok = await openConfirm(
+    "Google Drive already has data. Replace this device's boards with the Drive version? Cancel keeps everything as-is and disconnects.",
+  );
+  if (!ok) {
+    // Disconnect outside the mutex: disconnectDrive triggers
+    // stopDriveBackgroundSync, which force-resets the mutex state.
     await disconnectDrive();
     showSnackbar("Drive connection cancelled — nothing was changed.");
+    return;
   }
+  await runWithMutex(async () => {
+    adoptRemoteState(outcome.remote);
+    recordSyncTimestamp();
+    clearDirtyIfSynced();
+  });
 };
 
 // Periodic background pull. Cheap modifiedTime probe gates the full
@@ -357,6 +421,20 @@ export const pullDriveOnStartup = async ({ reason = "startup" } = {}) => {
 // no body fetch happens.
 export const pullDrivePeriodic = async ({ force = false } = {}) => {
   if (getDriveSnapshot().status !== "connected") return;
+
+  // While pushes are still gated (the startup pull failed), a plain adopt
+  // below would revert this session's dirty edits, and the cheap probe would
+  // leave the gate closed forever on a single-device profile. Run the full
+  // startup resolution instead — it consults the dirty flag, pushes local
+  // when appropriate, and opens the gate.
+  if (lastResolvedSpacesHash === null) {
+    try {
+      await pullDriveOnStartup({ reason: force ? "manual" : "periodic" });
+    } catch {
+      // still unreachable; retry next interval
+    }
+    return;
+  }
 
   return await runWithMutex(async (signal) => {
     const snapshot = getDriveSnapshot();
@@ -377,9 +455,11 @@ export const pullDrivePeriodic = async ({ force = false } = {}) => {
       }
     }
 
+    const lastKnownModified = snapshot.lastKnownDriveModifiedTime;
     let remote;
+    let modifiedTime;
     try {
-      ({ data: remote } = await pullFromDrive({
+      ({ data: remote, modifiedTime } = await pullFromDrive({
         markChecked: true,
         signal,
         allowInteractive: false,
@@ -388,12 +468,26 @@ export const pullDrivePeriodic = async ({ force = false } = {}) => {
       return;
     }
 
-    const remoteHash = computeSpacesHash(remote);
-    if (remoteHash !== computeSpacesHash(getState())) {
+    const localState = getState();
+    const remoteChanged = !(
+      lastKnownModified &&
+      modifiedTime &&
+      modifiedTime <= lastKnownModified
+    );
+    const differs =
+      comparableSpacesHash(remote) !== comparableSpacesHash(localState);
+    if (remoteChanged && differs) {
+      // Drive-first: another device wrote since our last sync.
       adoptRemoteState(remote);
-    } else {
-      lastResolvedSpacesHash = remoteHash;
+    } else if (!differs) {
+      // Same content, possibly different representation (favicons); anchor
+      // the resolved hash to the local form scheduleDriveSync compares.
+      lastResolvedSpacesHash = computeSpacesHash(localState);
     }
+    // remote unchanged but local differs: an unpushed local edit and no
+    // competing writer — leave it to the armed debounce push (or the next
+    // startup's push-local), never adopt over it.
+    clearDirtyIfSynced();
   });
 };
 
@@ -440,6 +534,9 @@ export const handleDriveUpdate = (snapshot) => {
   } else {
     stopDriveBackgroundSync();
     lastResolvedSpacesHash = null;
+    // Disconnect cleared the persisted flag; unknown mirror forces the
+    // next setDirtyFlag call to actually write.
+    driveDirtyMirror = null;
   }
   if (driveControl) {
     driveControl.classList.toggle("connected", connected);
@@ -449,6 +546,11 @@ export const handleDriveUpdate = (snapshot) => {
 export const initDriveUI = () => {
   if (initialized) return;
   initialized = true;
+
+  // Other new-tab instances write the same flag; keep the mirror honest.
+  onDriveDirtyFlagChanged((dirty) => {
+    driveDirtyMirror = dirty;
+  });
 
   driveConnectBtn?.addEventListener("click", async (event) => {
     const snapshot = getDriveSnapshot();

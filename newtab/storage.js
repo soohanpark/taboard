@@ -110,3 +110,24 @@ export const saveDriveDirtyFlag = async (dirty) => {
     return { success: false, error };
   }
 };
+
+export const clearDriveDirtyFlag = async () => {
+  try {
+    await withStorage("remove", DRIVE_DIRTY_KEY);
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to clear drive dirty flag", error);
+    return { success: false, error };
+  }
+};
+
+// Every new-tab page is a live instance; keep their in-memory mirrors of the
+// dirty flag honest when another instance writes it.
+export const onDriveDirtyFlagChanged = (callback) => {
+  if (!chrome?.storage?.onChanged) return;
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "local") return;
+    if (!(DRIVE_DIRTY_KEY in changes)) return;
+    callback(Boolean(changes[DRIVE_DIRTY_KEY].newValue));
+  });
+};
