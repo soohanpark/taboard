@@ -65,3 +65,30 @@ test("tracked and local manifests declare every generated icon", async () => {
     });
   }
 });
+
+test("store capture scenarios cover the approved five-part story", async () => {
+  const { captureScenarios } = await import(
+    "../scripts/store-capture-scenarios.mjs"
+  );
+  assert.deepEqual(
+    captureScenarios.map(({ id, headline }) => [id, headline]),
+    [
+      ["overview", "Your new tab, under control."],
+      ["save-tabs", "Turn open tabs into useful cards."],
+      ["card-types", "Organize links, notes, and todos."],
+      ["search", "Find anything across every space."],
+      ["local-first-sync", "Local first. Backed up when you choose."],
+    ],
+  );
+  assert.ok(
+    captureScenarios.every(({ state, tabs }) => state && tabs.length >= 3),
+  );
+  assert.equal(
+    captureScenarios.find(({ id }) => id === "search")?.afterRender,
+    null,
+  );
+  assert.equal(
+    captureScenarios.find(({ id }) => id === "local-first-sync")?.afterRender,
+    "open-drive-menu",
+  );
+});
