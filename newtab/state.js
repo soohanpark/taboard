@@ -135,6 +135,31 @@ export const createDefaultState = () => {
   };
 };
 
+// Content-only signature: ids, accents, and timestamps are random per
+// install, so compare just the user-visible text and card flags.
+const contentSignature = (state) =>
+  JSON.stringify(
+    (state?.spaces ?? []).map((space) => [
+      space?.name,
+      (space?.boards ?? []).map((board) => [
+        board?.name,
+        (board?.cards ?? []).map((card) => [
+          card?.type,
+          card?.title,
+          card?.note ?? "",
+          card?.url ?? "",
+          Boolean(card?.done),
+          Boolean(card?.favorite),
+        ]),
+      ]),
+    ]),
+  );
+
+// True while local is still the untouched fresh-install template — its
+// sample cards are not user content worth a destructive-replace warning.
+export const isDefaultSeedState = (state) =>
+  contentSignature(state) === contentSignature(createDefaultState());
+
 const PREFERENCE_DEFAULTS = {
   searchTerm: "",
   viewMode: "spaces",
@@ -151,6 +176,9 @@ const normalizeState = (state) => {
     return createDefaultState();
   }
   const next = clone(state);
+  // Transient render metadata must not survive persistence round-trips;
+  // a stale persisted meta.action would tag every later update with it.
+  delete next.meta;
   next.version = next.version ?? 1;
 
   // Guard: ensure spaces is an array
@@ -254,6 +282,16 @@ const normalizeState = (state) => {
       };
     });
 
+  // Ensure activeSpaceId points at an existing space (it can dangle after
+  // adopting remote state where that space was deleted on another device)
+  if (
+    next.preferences.activeSpaceId &&
+    !next.spaces.some((space) => space.id === next.preferences.activeSpaceId)
+  ) {
+    next.preferences.activeSpaceId = next.spaces[0]?.id ?? null;
+    next.preferences.activeBoardId = next.spaces[0]?.boards?.[0]?.id ?? null;
+  }
+
   // Ensure activeBoardId is valid for the active space
   const normalizedActiveSpace = next.spaces.find(
     (s) => s.id === next.preferences.activeSpaceId,
@@ -309,7 +347,8 @@ export const updateState = (mutator, meta = {}) => {
   const draft = clone(appState);
   mutator(draft);
   draft.lastUpdated = new Date().toISOString();
-  draft.meta = { ...(draft.meta ?? {}), ...meta };
+  // Fresh assignment: meta describes this update only, never merged forward.
+  draft.meta = { ...meta };
   appState = draft;
   notify();
   delete appState.meta;
