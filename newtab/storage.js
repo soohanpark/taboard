@@ -1,5 +1,6 @@
 const STATE_KEY = "taboard.state.v1";
 const DRIVE_META_KEY = "taboard.drive.meta.v1";
+const DRIVE_DIRTY_KEY = "taboard.drive.dirty.v1";
 
 const withStorage = async (method, payload) => {
   try {
@@ -87,4 +88,46 @@ export const clearDriveMetadata = async () => {
     console.error("Failed to clear drive metadata", error);
     return { success: false, error };
   }
+};
+
+// True while a local content change has not yet reached Drive.
+export const loadDriveDirtyFlag = async () => {
+  try {
+    const result = await withStorage("get", DRIVE_DIRTY_KEY);
+    return Boolean(result?.[DRIVE_DIRTY_KEY]);
+  } catch (error) {
+    console.error("Failed to load drive dirty flag", error);
+    return false;
+  }
+};
+
+export const saveDriveDirtyFlag = async (dirty) => {
+  try {
+    await withStorage("set", { [DRIVE_DIRTY_KEY]: Boolean(dirty) });
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to persist drive dirty flag", error);
+    return { success: false, error };
+  }
+};
+
+export const clearDriveDirtyFlag = async () => {
+  try {
+    await withStorage("remove", DRIVE_DIRTY_KEY);
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to clear drive dirty flag", error);
+    return { success: false, error };
+  }
+};
+
+// Every new-tab page is a live instance; keep their in-memory mirrors of the
+// dirty flag honest when another instance writes it.
+export const onDriveDirtyFlagChanged = (callback) => {
+  if (!chrome?.storage?.onChanged) return;
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "local") return;
+    if (!(DRIVE_DIRTY_KEY in changes)) return;
+    callback(Boolean(changes[DRIVE_DIRTY_KEY].newValue));
+  });
 };

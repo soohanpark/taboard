@@ -20,6 +20,8 @@ let tabUpdateTimer = null;
 let tabFilterDebounceTimer = null;
 let tabsInitialized = false;
 let observersRegistered = false;
+let draggingTabItem = false;
+let pendingTabRender = false;
 
 let tabCallbacks = {
   addTabCardToBoard: null,
@@ -83,11 +85,17 @@ const closeBrowserTab = (tabId) => {
 };
 
 export const renderOpenTabs = () => {
-  if (getDraggingCard()) return;
+  // Rebuilding the list mid-drag would detach the drag source / churn drop
+  // targets; remember to re-render once the drag finishes instead.
+  if (getDraggingCard() || draggingTabItem) {
+    pendingTabRender = true;
+    return;
+  }
+  pendingTabRender = false;
 
   const filtered = openTabs.filter((tab) => {
     if (!tabFilter) return true;
-    const haystack = `${tab.title} ${tab.url}`.toLowerCase();
+    const haystack = `${tab.title ?? ""} ${tab.url ?? ""}`.toLowerCase();
     return haystack.includes(tabFilter.toLowerCase());
   });
 
@@ -128,11 +136,11 @@ export const renderOpenTabs = () => {
 
     const title = document.createElement("p");
     title.className = "tab-title";
-    title.textContent = tab.title;
+    title.textContent = tab.title ?? "";
 
     const url = document.createElement("p");
     url.className = "tab-url";
-    url.textContent = tab.url;
+    url.textContent = tab.url ?? "";
 
     info.appendChild(title);
     info.appendChild(url);
@@ -151,6 +159,10 @@ export const renderOpenTabs = () => {
   });
 
   tabListEl.replaceChildren(fragment);
+};
+
+export const flushPendingTabRender = () => {
+  if (pendingTabRender) renderOpenTabs();
 };
 
 export const fetchOpenTabs = async () => {
@@ -241,6 +253,7 @@ export const initTabs = (callbacks = {}) => {
     ) {
       return;
     }
+    draggingTabItem = true;
     const payload = {
       title: tabItem.dataset.tabTitle,
       url: tabItem.dataset.tabUrl,
@@ -249,6 +262,11 @@ export const initTabs = (callbacks = {}) => {
     event.dataTransfer.setData(TAB_DRAG_MIME, JSON.stringify(payload));
     event.dataTransfer.setData("text/plain", tabItem.dataset.tabUrl);
     event.dataTransfer.effectAllowed = "copy";
+  });
+
+  tabListEl?.addEventListener("dragend", () => {
+    draggingTabItem = false;
+    flushPendingTabRender();
   });
 
   tabListEl?.addEventListener("click", (event) => {

@@ -2458,6 +2458,11 @@ button:active {
 }
 
 /* Card action popover menu */
+/* ponytail: lift the open card above later siblings so its popover isn't clipped */
+.card:has(.card-action-menu) {
+  z-index: 10;
+}
+
 .card-action-menu {
   position: absolute;
   top: 36px;

@@ -48,6 +48,7 @@ import {
   fetchOpenTabs,
   initTabs,
   renderOpenTabs,
+  flushPendingTabRender,
   registerTabObservers,
   cleanupTabs,
   toggleTabDrawerPin,
@@ -79,6 +80,7 @@ import {
 } from "./drag.js";
 import {
   schedulePersist,
+  flushPersist,
   scheduleDriveSync,
   handleDriveUpdate,
   initDriveUI,
@@ -86,6 +88,13 @@ import {
   pullDriveOnStartup,
   setBootstrapSuppress,
 } from "./drive-ui.js";
+// MV3 CSP blocks inline onload handlers, so the async stylesheet trick
+// (media="print" -> "all") must be completed here instead of in the HTML.
+document
+  .querySelectorAll('link[rel="stylesheet"][media="print"]')
+  .forEach((link) => {
+    link.media = "all";
+  });
 const boardEl = document.getElementById("board");
 const spaceTabsEl = document.getElementById("space-tabs");
 const addColumnBtn = document.getElementById("add-column");
@@ -220,6 +229,7 @@ const handleCardDragEnd = ({ cardEl }) => {
   cardEl.classList.remove("dragging");
   document.body.classList.remove("drag-in-progress");
   clearDragCache();
+  flushPendingTabRender();
 };
 const ensureActiveBoardId = (state) => {
   const space = getActiveSpace(state);
@@ -304,7 +314,7 @@ const handleStateChange = (state) => {
     searchClearBtn.hidden = !(state.preferences.searchTerm ?? "");
   }
   schedulePersist(state);
-  scheduleDriveSync(state, { trigger: metaAction, meta });
+  scheduleDriveSync(state, { trigger: metaAction });
 };
 const addTabCardToBoard = (boardId, tabPayload) => {
   if (!boardId || !tabPayload?.url) return;
@@ -455,7 +465,7 @@ const handleCardAction = (action, boardId, cardId, spaceId = null) => {
     });
   if (action === "edit") return openCardModal({ boardId, cardId, spaceId });
   if (action === "open") {
-    if (card.url) window.open(card.url, "_blank");
+    if (card.url) window.open(card.url, "_blank", "noopener,noreferrer");
     return;
   }
   if (action !== "delete") return;
@@ -469,7 +479,7 @@ const handleCardPrimaryClick = (cardElement) => {
   const { card } = findCardContext(currentState, { spaceId, boardId, cardId });
   if (!card) return;
   if (card.type === "link" && card.url) {
-    window.open(card.url, "_blank");
+    window.open(card.url, "_blank", "noopener,noreferrer");
     return;
   }
   if (isReadOnly && spaceId && boardId) {
@@ -526,7 +536,9 @@ const openBoardLinks = async (boardId) => {
     !chrome?.tabGroups?.update ||
     !chrome?.windows?.getCurrent
   ) {
-    links.forEach((card) => window.open(card.url, "_blank"));
+    links.forEach((card) =>
+      window.open(card.url, "_blank", "noopener,noreferrer"),
+    );
     return showSnackbar(
       "Your browser doesn't support tab groups; opened in new tabs.",
     );
@@ -551,7 +563,9 @@ const openBoardLinks = async (boardId) => {
     );
   } catch (error) {
     console.error("Failed to open board links as group", error);
-    links.forEach((card) => window.open(card.url, "_blank"));
+    links.forEach((card) =>
+      window.open(card.url, "_blank", "noopener,noreferrer"),
+    );
     showSnackbar("Failed to create a tab group; opened in new tabs instead.");
   }
 };
@@ -1187,8 +1201,11 @@ window.addEventListener("keydown", (event) => {
         navigateActiveBoard(event.key === "ArrowDown" ? 1 : -1);
         return;
       }
-      if (event.altKey && event.key >= "1" && event.key <= "9") {
-        const idx = parseInt(event.key, 10) - 1;
+      // event.code, not event.key: Option+digit types "¡™£…" on macOS.
+      // Exclude ctrl/meta so Windows AltGr (ctrl+alt) doesn't match.
+      const digitMatch = /^(?:Digit|Numpad)([1-9])$/.exec(event.code);
+      if (event.altKey && !event.ctrlKey && !event.metaKey && digitMatch) {
+        const idx = Number(digitMatch[1]) - 1;
         if (idx < space.boards.length) {
           event.preventDefault();
           updateState((draft) => {
@@ -1277,6 +1294,10 @@ searchInput.addEventListener("input", (event) => {
   );
 });
 bootstrap();
+// Tab discard never fires beforeunload; hidden is the last reliable moment.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") flushPersist();
+});
 window.addEventListener("beforeunload", () => {
   isUnloading = true;
   cleanupTabs();

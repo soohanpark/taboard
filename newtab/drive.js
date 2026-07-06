@@ -1,4 +1,5 @@
 import {
+  clearDriveDirtyFlag,
   clearDriveMetadata,
   loadDriveMetadata,
   saveDriveMetadata,
@@ -330,6 +331,8 @@ export const connectDrive = async () => {
 export const disconnectDrive = async () => {
   try {
     await clearDriveMetadata();
+    // The dirty flag is meaningless without the sync metadata it refers to.
+    await clearDriveDirtyFlag();
     setDriveState(INITIAL_DRIVE_STATE);
     emit();
 
@@ -393,7 +396,10 @@ const withFreshToken = async (fn, allowInteractive = true) => {
   }
 };
 
-const stripFavicons = (state) => {
+// Favicons (often data: URIs) are stripped from every push, so states read
+// back from Drive lack the favicon keys local normalization guarantees.
+// Cross-side content comparisons must strip both sides first.
+export const stripFavicons = (state) => {
   if (!state) return state;
   return JSON.parse(
     JSON.stringify(state, (key, value) =>
