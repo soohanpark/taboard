@@ -1,4 +1,5 @@
 const timestamp = "2026-07-06T08:00:00.000Z";
+const captureNow = 1783326000000;
 
 const card = (id, type, title, options = {}) => ({
   id,
@@ -163,6 +164,7 @@ const tabs = [
 export const captureScenarios = [
   {
     id: "overview",
+    now: captureNow,
     filename: "01-overview.png",
     headline: "Your new tab, under control.",
     supportingCopy: "Open tabs and personal boards, side by side.",
@@ -172,6 +174,7 @@ export const captureScenarios = [
   },
   {
     id: "save-tabs",
+    now: captureNow,
     filename: "02-save-tabs.png",
     headline: "Turn open tabs into useful cards.",
     supportingCopy: "Keep the links worth returning to.",
@@ -181,6 +184,7 @@ export const captureScenarios = [
   },
   {
     id: "card-types",
+    now: captureNow,
     filename: "03-card-types.png",
     headline: "Organize links, notes, and todos.",
     supportingCopy: "One focused board for every kind of thought.",
@@ -190,6 +194,7 @@ export const captureScenarios = [
   },
   {
     id: "search",
+    now: captureNow,
     filename: "04-search.png",
     headline: "Find anything across every space.",
     supportingCopy: "Search cards without losing your place.",
@@ -199,6 +204,7 @@ export const captureScenarios = [
   },
   {
     id: "local-first-sync",
+    now: captureNow,
     filename: "05-local-first-sync.png",
     headline: "Local first. Backed up when you choose.",
     supportingCopy: "Optional Google Drive sync keeps you in control.",

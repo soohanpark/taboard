@@ -91,4 +91,45 @@ test("store capture scenarios cover the approved five-part story", async () => {
     captureScenarios.find(({ id }) => id === "local-first-sync")?.afterRender,
     "open-drive-menu",
   );
+  assert.ok(captureScenarios.every(({ now }) => Number.isFinite(now)));
+  const syncScenario = captureScenarios.find(
+    ({ id }) => id === "local-first-sync",
+  );
+  assert.equal(
+    syncScenario.now - syncScenario.state.preferences.lastSyncAt,
+    20 * 60 * 1000,
+  );
+});
+
+test("Chrome Web Store outputs have exact dimensions", async () => {
+  const expected = new Map([
+    ["store-assets/screenshots/01-overview.png", [1280, 800]],
+    ["store-assets/screenshots/02-save-tabs.png", [1280, 800]],
+    ["store-assets/screenshots/03-card-types.png", [1280, 800]],
+    ["store-assets/screenshots/04-search.png", [1280, 800]],
+    ["store-assets/screenshots/05-local-first-sync.png", [1280, 800]],
+    ["store-assets/promo/small-promo-440x280.png", [440, 280]],
+    ["store-assets/promo/marquee-1400x560.png", [1400, 560]],
+    ["icons/banner.png", [1024, 358]],
+  ]);
+  for (const [file, dimensions] of expected) {
+    const png = await readPng(file);
+    assert.deepEqual([png.width, png.height], dimensions, file);
+  }
+});
+
+test("store and README marketing images are opaque RGB PNGs", async () => {
+  const files = [
+    "store-assets/screenshots/01-overview.png",
+    "store-assets/screenshots/02-save-tabs.png",
+    "store-assets/screenshots/03-card-types.png",
+    "store-assets/screenshots/04-search.png",
+    "store-assets/screenshots/05-local-first-sync.png",
+    "store-assets/promo/small-promo-440x280.png",
+    "store-assets/promo/marquee-1400x560.png",
+    "icons/banner.png",
+  ];
+  for (const file of files) {
+    assert.equal((await readPng(file)).colorType, 2, `${file} must be RGB`);
+  }
 });

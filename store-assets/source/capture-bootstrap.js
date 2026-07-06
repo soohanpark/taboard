@@ -1,6 +1,8 @@
 (() => {
   const capture = globalThis.__TABOARD_CAPTURE__;
   if (!capture) throw new Error("Missing Taboard capture scenario.");
+  const nativeDateNow = Date.now.bind(Date);
+  Date.now = () => capture.now ?? nativeDateNow();
 
   const stateKey = "taboard.state.v1";
   const driveMetaKey = "taboard.drive.meta.v1";
@@ -113,14 +115,14 @@
   };
 
   const finishCaptureSetup = async () => {
-    const deadline = Date.now() + 5_000;
-    while (Date.now() < deadline && !document.querySelector(".card")) {
+    const deadline = performance.now() + 5_000;
+    while (performance.now() < deadline && !document.querySelector(".card")) {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
     if (capture.afterRender === "open-drive-menu") {
-      const driveDeadline = Date.now() + 5_000;
+      const driveDeadline = performance.now() + 5_000;
       while (
-        Date.now() < driveDeadline &&
+        performance.now() < driveDeadline &&
         !document.getElementById("drive-control")?.classList.contains("connected")
       ) {
         await new Promise((resolve) => setTimeout(resolve, 25));
@@ -129,9 +131,9 @@
         throw new Error("Drive control did not reach the connected state.");
       }
       document.getElementById("drive-connect")?.click();
-      const menuDeadline = Date.now() + 2_000;
+      const menuDeadline = performance.now() + 2_000;
       while (
-        Date.now() < menuDeadline &&
+        performance.now() < menuDeadline &&
         document.getElementById("drive-menu")?.dataset.open !== "true"
       ) {
         await new Promise((resolve) => setTimeout(resolve, 25));

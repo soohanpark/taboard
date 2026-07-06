@@ -3,6 +3,7 @@ import { constants as fsConstants } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { captureScenarios } from "./store-capture-scenarios.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(scriptDir, "..");
@@ -91,7 +92,6 @@ const renderSvgSheet = async (name, svg, outputPath, width, height) => {
   await rm(profilePath, { recursive: true, force: true });
   await renderWithChrome([
     "--headless=new",
-    "--disable-gpu",
     "--hide-scrollbars",
     "--no-first-run",
     "--no-default-browser-check",
@@ -109,7 +109,11 @@ const renderSvgSheet = async (name, svg, outputPath, width, height) => {
   await rm(profilePath, { recursive: true, force: true });
 };
 
-const cropPng = async (sourcePath, outputPath, { x, y, width, height }) => {
+const cropPng = async (
+  sourcePath,
+  outputPath,
+  { x, y, width, height, opaque = false },
+) => {
   await mkdir(path.dirname(outputPath), { recursive: true });
   run(ffmpeg, [
     "-y",
@@ -122,7 +126,7 @@ const cropPng = async (sourcePath, outputPath, { x, y, width, height }) => {
     "-frames:v",
     "1",
     "-pix_fmt",
-    "rgba",
+    opaque ? "rgb24" : "rgba",
     outputPath,
   ]);
 };
@@ -156,6 +160,13 @@ const composeSvg = ({ width, height, body, defs = "" }) => `
   <defs>${defs}</defs>
   ${body}
 </svg>`;
+
+const escapeXml = (value) =>
+  String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 
 const bannerGroup = ({ x, y }) => `
   <g transform="translate(${x} ${y})">
@@ -209,33 +220,121 @@ const renderStaticAssets = async () => {
     ["icon32", path.join(root, "icons", "icon32.png")],
     ["icon48", path.join(root, "icons", "icon48.png")],
     ["icon128", path.join(root, "icons", "icon128.png")],
-    ["banner", path.join(root, "icons", "banner.png")],
+    ["banner", path.join(root, "icons", "banner.png"), true],
     [
       "smallPromo",
       path.join(root, "store-assets", "promo", "small-promo-440x280.png"),
+      true,
     ],
   ];
-  for (const [name, outputPath] of outputs) {
-    await cropPng(sheetPath, outputPath, regions[name]);
+  for (const [name, outputPath, opaque = false] of outputs) {
+    await cropPng(sheetPath, outputPath, { ...regions[name], opaque });
   }
 };
 
 await renderStaticAssets();
 
-if (!staticOnly) {
-  const overview = path.join(
-    root,
-    "store-assets",
-    ".work",
-    "01-overview.png",
-  );
-  try {
-    await access(overview, fsConstants.R_OK);
-  } catch {
-    throw new Error(
-      "Raw store captures are missing. Run npm run assets:capture first.",
+const finalDefs = () => `
+  ${iconDefs("final-brand")}
+  <linearGradient id="screen-bg" x1="0" y1="0" x2="1" y2="1">
+    <stop stop-color="#19386F"/>
+    <stop offset="0.42" stop-color="#0B1324"/>
+    <stop offset="1" stop-color="#060B15"/>
+  </linearGradient>
+  <linearGradient id="marquee-bg" x1="0" y1="0" x2="1" y2="1">
+    <stop stop-color="#214A91"/>
+    <stop offset="0.34" stop-color="#0B1324"/>
+    <stop offset="1" stop-color="#060B15"/>
+  </linearGradient>
+  <filter id="ui-shadow" x="-20%" y="-30%" width="140%" height="170%">
+    <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#02050B" flood-opacity="0.5"/>
+  </filter>`;
+
+const screenshotGroup = ({ scenario, dataUri, x, y }) => {
+  const headlineSize = scenario.id === "local-first-sync" ? 39 : 42;
+  return `
+    <svg x="${x}" y="${y}" width="1280" height="800" viewBox="0 0 1280 800" overflow="hidden">
+      <rect width="1280" height="800" fill="url(#screen-bg)"/>
+      <circle cx="1150" cy="-80" r="320" fill="#2F6BFF" opacity="0.11"/>
+      <text x="40" y="34" fill="#78A1FF" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="13" font-weight="700" letter-spacing="2.4">TABOARD</text>
+      <text x="40" y="82" fill="#F7FAFF" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="${headlineSize}" font-weight="720" letter-spacing="-1.2">${escapeXml(scenario.headline)}</text>
+      <text x="42" y="116" fill="#A9B9D6" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="18" font-weight="520">${escapeXml(scenario.supportingCopy)}</text>
+      ${iconGroup({ x: 1176, y: 24, size: 72, id: "final-brand" })}
+      <g filter="url(#ui-shadow)">
+        <image href="${dataUri}" x="40" y="150" width="1200" height="581.25" preserveAspectRatio="none"/>
+        <rect x="40.5" y="150.5" width="1199" height="580.25" fill="none" stroke="#6E92D9" stroke-opacity="0.35"/>
+      </g>
+    </svg>`;
+};
+
+const marqueeGroup = ({ dataUri, x, y }) => `
+  <svg x="${x}" y="${y}" width="1400" height="560" viewBox="0 0 1400 560" overflow="hidden">
+    <rect width="1400" height="560" fill="url(#marquee-bg)"/>
+    <circle cx="1330" cy="-40" r="340" fill="#2F6BFF" opacity="0.13"/>
+    ${iconGroup({ x: 48, y: 42, size: 112, id: "final-brand" })}
+    <text x="174" y="111" fill="#F7FAFF" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="54" font-weight="720" letter-spacing="-2">Taboard</text>
+    <text x="58" y="245" fill="#F7FAFF" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="45" font-weight="720" letter-spacing="-1.3">Make every tab count.</text>
+    <text x="61" y="286" fill="#8FB0FF" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="20" font-weight="560">Tabs · boards · notes · todos</text>
+    <g transform="rotate(-2 1060 280)" filter="url(#ui-shadow)">
+      <image href="${dataUri}" x="650" y="72" width="820" height="397.2" preserveAspectRatio="none"/>
+      <rect x="650.5" y="72.5" width="819" height="396.2" fill="none" stroke="#6E92D9" stroke-opacity="0.45"/>
+    </g>
+  </svg>`;
+
+const renderFinalAssets = async () => {
+  const placements = [
+    { x: 0, y: 0 },
+    { x: 1280, y: 0 },
+    { x: 0, y: 800 },
+    { x: 1280, y: 800 },
+    { x: 0, y: 1600 },
+  ];
+  const captures = [];
+  for (const scenario of captureScenarios) {
+    const capturePath = path.join(root, "store-assets", ".work", scenario.filename);
+    try {
+      await access(capturePath, fsConstants.R_OK);
+    } catch {
+      throw new Error(
+        `Raw capture ${scenario.filename} is missing. Run npm run assets:capture first.`,
+      );
+    }
+    const bytes = await readFile(capturePath);
+    captures.push(`data:image/png;base64,${bytes.toString("base64")}`);
+  }
+
+  const sheet = composeSvg({
+    width: 2680,
+    height: 2400,
+    defs: finalDefs(),
+    body: [
+      ...captureScenarios.map((scenario, index) =>
+        screenshotGroup({
+          scenario,
+          dataUri: captures[index],
+          ...placements[index],
+        }),
+      ),
+      marqueeGroup({ dataUri: captures[0], x: 1280, y: 1600 }),
+    ].join(""),
+  });
+  const sheetPath = path.join(workDir, "final-sheet.png");
+  await renderSvgSheet("final-sheet", sheet, sheetPath, 2680, 2400);
+
+  for (const [index, scenario] of captureScenarios.entries()) {
+    await cropPng(
+      sheetPath,
+      path.join(root, "store-assets", "screenshots", scenario.filename),
+      { ...placements[index], width: 1280, height: 800, opaque: true },
     );
   }
-}
+  await cropPng(
+    sheetPath,
+    path.join(root, "store-assets", "promo", "marquee-1400x560.png"),
+    { x: 1280, y: 1600, width: 1400, height: 560, opaque: true },
+  );
+};
+
+if (!staticOnly) await renderFinalAssets();
 
 console.log(`Generated ${staticOnly ? "static brand" : "brand"} assets.`);
