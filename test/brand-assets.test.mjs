@@ -133,3 +133,12 @@ test("store and README marketing images are opaque RGB PNGs", async () => {
     assert.equal((await readPng(file)).colorType, 2, `${file} must be RGB`);
   }
 });
+
+test("capture bootstrap disables motion for deterministic screenshots", async () => {
+  const bootstrap = await readFile(
+    path.join(root, "store-assets/source/capture-bootstrap.js"),
+    "utf8",
+  );
+  assert.match(bootstrap, /transition-duration:\s*0s\s*!important/);
+  assert.match(bootstrap, /animation-duration:\s*0s\s*!important/);
+});

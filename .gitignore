@@ -6,3 +6,6 @@ manifest.json
 .sisyphus/**/*
 .claude/
 graphify-out/
+
+# Generated Chrome Web Store capture intermediates
+store-assets/.work/

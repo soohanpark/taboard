@@ -3,6 +3,16 @@
   if (!capture) throw new Error("Missing Taboard capture scenario.");
   const nativeDateNow = Date.now.bind(Date);
   Date.now = () => capture.now ?? nativeDateNow();
+  const motionStyle = document.createElement("style");
+  motionStyle.textContent = `
+    *, *::before, *::after {
+      transition-duration: 0s !important;
+      animation-duration: 0s !important;
+      animation-delay: 0s !important;
+      caret-color: transparent !important;
+    }
+  `;
+  document.head.appendChild(motionStyle);
 
   const stateKey = "taboard.state.v1";
   const driveMetaKey = "taboard.drive.meta.v1";
