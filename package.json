@@ -1,6 +1,9 @@
 {
   "type": "module",
   "scripts": {
-    "test": "node --experimental-test-module-mocks --test"
+    "test": "node --experimental-test-module-mocks --test",
+    "assets:generate": "node scripts/generate-brand-assets.mjs",
+    "assets:capture": "node scripts/capture-store-assets.mjs",
+    "assets:verify": "node --test test/brand-assets.test.mjs"
   }
 }
