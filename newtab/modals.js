@@ -1,4 +1,4 @@
-import { getState } from "./state.js";
+import { getRandomAccent, getState, SPACE_ACCENT_PALETTE } from "./state.js";
 import { SNACKBAR_DURATION_MS } from "./constants.js";
 
 const cardModalEl = document.getElementById("card-modal");
@@ -7,9 +7,16 @@ const cardDeleteBtn = cardForm?.querySelector("[data-delete-card]");
 const cardNoteField = cardForm?.querySelector("[data-card-field='note']");
 const cardUrlField = cardForm?.querySelector("[data-card-field='url']");
 const cardUrlInput = cardForm?.elements?.url;
+const cardModalTitleEl = document.getElementById("modal-title");
 const spaceModalEl = document.getElementById("space-modal");
 const spaceForm = document.getElementById("space-form");
 const spaceDeleteBtn = spaceForm?.querySelector("[data-delete-space]");
+const spaceModalTitleEl = document.getElementById("space-modal-title");
+const spaceModalDescriptionEl = document.getElementById(
+  "space-modal-description",
+);
+const spaceAccentOptionsEl = document.getElementById("space-accent-options");
+const spaceAccentPreviewEl = document.getElementById("space-accent-preview");
 const snackbarEl = document.getElementById("snackbar");
 const confirmModalEl = document.getElementById("confirm-modal");
 const confirmMessageEl = document.getElementById("confirm-message");
@@ -22,6 +29,19 @@ let confirmResolver = null;
 let initialized = false;
 let lastSnackbarUndo = null;
 let activeCardMenu = null;
+
+const SPACE_ACCENT_NAMES = [
+  "Blue",
+  "Indigo",
+  "Orange",
+  "Emerald",
+  "Violet",
+  "Sky",
+  "Red",
+  "Amber",
+  "Teal",
+  "Pink",
+];
 
 const mutationCallbacks = {
   addCard: () => {},
@@ -43,6 +63,46 @@ const getActiveSpace = (state = getState()) => {
 
 const findSpaceById = (state, spaceId) =>
   state?.spaces?.find((space) => space.id === spaceId) ?? null;
+
+const setModalCopy = (titleEl, descriptionEl, title, description) => {
+  if (titleEl) titleEl.textContent = title;
+  if (descriptionEl) descriptionEl.textContent = description;
+};
+
+const updateSpaceAccentPreview = (accent) => {
+  spaceAccentPreviewEl?.style.setProperty("--space-preview", accent);
+};
+
+const renderSpaceAccentOptions = () => {
+  if (!spaceAccentOptionsEl || spaceAccentOptionsEl.childNodes.length) return;
+
+  SPACE_ACCENT_PALETTE.forEach((accent, index) => {
+    const option = document.createElement("label");
+    option.className = "accent-option";
+
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "accent";
+    input.value = accent;
+    input.required = true;
+    input.setAttribute(
+      "aria-label",
+      `${SPACE_ACCENT_NAMES[index] ?? "Custom"} space color`,
+    );
+
+    const swatch = document.createElement("span");
+    swatch.className = "accent-swatch";
+    swatch.style.setProperty("--swatch", accent);
+    swatch.setAttribute("aria-hidden", "true");
+
+    option.appendChild(input);
+    option.appendChild(swatch);
+    spaceAccentOptionsEl.appendChild(option);
+  });
+};
+
+const isCloseAction = (event, target) =>
+  Boolean(event.target.closest?.(`[data-close="${target}"]`));
 
 const findCardContext = (
   state,
@@ -204,6 +264,9 @@ export const openCardModal = ({
   }
 
   updateCardFormFields(cardForm.elements.type.value);
+  if (cardModalTitleEl) {
+    cardModalTitleEl.textContent = cardId ? "Edit card" : "New card";
+  }
 
   cardModalEl.classList.add("visible");
   cardModalEl.classList.remove("hidden");
@@ -303,23 +366,41 @@ export const renderCardActionMenu = (cardEl, card, options = {}) => {
 
 export const openSpaceModal = (spaceId = null) => {
   if (!spaceForm || !spaceModalEl || !spaceDeleteBtn) return;
+  renderSpaceAccentOptions();
   const state = getState();
+  let accent = getRandomAccent();
 
   if (spaceId) {
     const space = state.spaces.find((item) => item.id === spaceId);
     if (space) {
       spaceForm.elements.spaceId.value = space.id;
       spaceForm.elements.name.value = space.name;
+      accent = space.accent ?? accent;
     }
+    setModalCopy(
+      spaceModalTitleEl,
+      spaceModalDescriptionEl,
+      "Edit space",
+      "Update its name and visual identity.",
+    );
     const canDelete = state.spaces.length > 1;
     spaceDeleteBtn.hidden = !canDelete;
     spaceDeleteBtn.style.display = canDelete ? "inline-flex" : "none";
   } else {
     spaceForm.reset();
     spaceForm.elements.spaceId.value = "";
+    setModalCopy(
+      spaceModalTitleEl,
+      spaceModalDescriptionEl,
+      "New space",
+      "Create a focused home for related boards.",
+    );
     spaceDeleteBtn.hidden = true;
     spaceDeleteBtn.style.display = "none";
   }
+
+  spaceForm.elements.accent.value = accent;
+  updateSpaceAccentPreview(accent);
 
   spaceModalEl.classList.add("visible");
   spaceModalEl.classList.remove("hidden");
@@ -347,9 +428,12 @@ export const initModals = (callbacks = {}) => {
   if (initialized) return;
   initialized = true;
   hideSnackbar();
+  renderSpaceAccentOptions();
 
-  cardForm?.elements?.type?.addEventListener("change", (event) => {
-    updateCardFormFields(event.target.value);
+  cardForm?.addEventListener("change", (event) => {
+    if (event.target.matches?.('input[name="type"]')) {
+      updateCardFormFields(event.target.value);
+    }
   });
 
   cardForm?.addEventListener("submit", (event) => {
@@ -452,8 +536,14 @@ export const initModals = (callbacks = {}) => {
   });
 
   cardModalEl?.addEventListener("click", (event) => {
-    if (event.target.dataset.close === "card") {
+    if (isCloseAction(event, "card")) {
       closeModal(cardModalEl);
+    }
+  });
+
+  spaceForm?.addEventListener("change", (event) => {
+    if (event.target.matches?.('input[name="accent"]')) {
+      updateSpaceAccentPreview(event.target.value);
     }
   });
 
@@ -462,13 +552,14 @@ export const initModals = (callbacks = {}) => {
     const formData = new FormData(spaceForm);
     const spaceId = formData.get("spaceId")?.toString() ?? "";
     const name = formData.get("name")?.toString().trim();
+    const accent = formData.get("accent")?.toString() ?? "";
     if (!name) return;
 
     if (spaceId) {
-      mutationCallbacks.editSpace({ spaceId, name });
+      mutationCallbacks.editSpace({ spaceId, name, accent });
       showSnackbar("Space updated.");
     } else {
-      mutationCallbacks.addSpace({ name });
+      mutationCallbacks.addSpace({ name, accent });
       showSnackbar("Space created.");
     }
 
@@ -489,13 +580,13 @@ export const initModals = (callbacks = {}) => {
   });
 
   spaceModalEl?.addEventListener("click", (event) => {
-    if (event.target.dataset.close === "space") {
+    if (isCloseAction(event, "space")) {
       closeModal(spaceModalEl);
     }
   });
 
   confirmModalEl?.addEventListener("click", (event) => {
-    if (event.target.dataset.close === "confirm") {
+    if (isCloseAction(event, "confirm")) {
       if (confirmResolver) {
         confirmResolver(false);
       }
@@ -518,7 +609,7 @@ export const initModals = (callbacks = {}) => {
   });
 
   shortcutsModalEl?.addEventListener("click", (event) => {
-    if (event.target.dataset.close === "shortcuts") {
+    if (isCloseAction(event, "shortcuts")) {
       closeModal(shortcutsModalEl);
     }
   });
