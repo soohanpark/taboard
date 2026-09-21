@@ -55,7 +55,7 @@ const sampleCards = () => [
 export const generateId = (prefix = "item") =>
   `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 
-const ACCENT_PALETTE = [
+export const SPACE_ACCENT_PALETTE = [
   "#2563eb",
   "#6366f1",
   "#f97316",
@@ -69,8 +69,34 @@ const ACCENT_PALETTE = [
 ];
 
 export const getRandomAccent = () => {
-  const index = Math.floor(Math.random() * ACCENT_PALETTE.length);
-  return ACCENT_PALETTE[index];
+  const index = Math.floor(Math.random() * SPACE_ACCENT_PALETTE.length);
+  return SPACE_ACCENT_PALETTE[index];
+};
+
+export const getAccentTextColor = (accent) => {
+  const channels = accent?.match?.(/[0-9a-f]{2}/gi);
+  if (!channels || channels.length !== 3) return "#ffffff";
+  const [red, green, blue] = channels.map((channel) => {
+    const value = Number.parseInt(channel, 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  const whiteContrast = 1.05 / (luminance + 0.05);
+  return whiteContrast >= 4.5 ? "#ffffff" : "#05070d";
+};
+
+export const applySpaceDetails = (
+  space,
+  { name, accent },
+  updatedAt = new Date().toISOString(),
+) => {
+  if (!space) return false;
+  space.name = name;
+  if (SPACE_ACCENT_PALETTE.includes(accent)) {
+    space.accent = accent;
+  }
+  space.updatedAt = updatedAt;
+  return true;
 };
 
 export const createDefaultState = () => {

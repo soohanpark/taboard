@@ -1,4 +1,4 @@
-import { getState } from "./state.js";
+import { getRandomAccent, getState, SPACE_ACCENT_PALETTE } from "./state.js";
 import { SNACKBAR_DURATION_MS } from "./constants.js";
 
 const cardModalEl = document.getElementById("card-modal");
@@ -7,9 +7,16 @@ const cardDeleteBtn = cardForm?.querySelector("[data-delete-card]");
 const cardNoteField = cardForm?.querySelector("[data-card-field='note']");
 const cardUrlField = cardForm?.querySelector("[data-card-field='url']");
 const cardUrlInput = cardForm?.elements?.url;
+const cardModalTitleEl = document.getElementById("modal-title");
 const spaceModalEl = document.getElementById("space-modal");
 const spaceForm = document.getElementById("space-form");
 const spaceDeleteBtn = spaceForm?.querySelector("[data-delete-space]");
+const spaceModalTitleEl = document.getElementById("space-modal-title");
+const spaceModalDescriptionEl = document.getElementById(
+  "space-modal-description",
+);
+const spaceAccentOptionsEl = document.getElementById("space-accent-options");
+const spaceAccentPreviewEl = document.getElementById("space-accent-preview");
 const snackbarEl = document.getElementById("snackbar");
 const confirmModalEl = document.getElementById("confirm-modal");
 const confirmMessageEl = document.getElementById("confirm-message");
@@ -22,6 +29,87 @@ let confirmResolver = null;
 let initialized = false;
 let lastSnackbarUndo = null;
 let activeCardMenu = null;
+const modalFocusOrigins = new WeakMap();
+
+const MODAL_FOCUSABLE_SELECTOR = [
+  "button:not([disabled]):not([hidden])",
+  "input:not([disabled]):not([hidden])",
+  "textarea:not([disabled]):not([hidden])",
+  "select:not([disabled]):not([hidden])",
+  '[href]:not([tabindex="-1"])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
+
+const focusModal = (modal, preferredTarget = null) => {
+  if (!modal) return;
+  const origin = document.activeElement;
+  if (origin?.focus && !modalFocusOrigins.has(modal)) {
+    modalFocusOrigins.set(modal, origin);
+  }
+  queueMicrotask(() => {
+    if (!modal.classList.contains("visible")) return;
+    const target =
+      preferredTarget ?? modal.querySelector?.(MODAL_FOCUSABLE_SELECTOR);
+    target?.focus?.();
+  });
+};
+
+const restoreModalFocus = (modal) => {
+  if (!modal) return;
+  const origin = modalFocusOrigins.get(modal);
+  modalFocusOrigins.delete(modal);
+  queueMicrotask(() => {
+    if (!getVisibleModal()) origin?.focus?.();
+  });
+};
+
+const getVisibleModal = () =>
+  [confirmModalEl, cardModalEl, spaceModalEl, shortcutsModalEl].find((modal) =>
+    modal?.classList.contains("visible"),
+  ) ?? null;
+
+const keepFocusInModal = (event) => {
+  if (event.key !== "Tab") return false;
+  const modal = getVisibleModal();
+  if (!modal?.querySelectorAll) return false;
+  const focusable = [
+    ...modal.querySelectorAll(MODAL_FOCUSABLE_SELECTOR),
+  ].filter(
+    (element) =>
+      !element.hidden &&
+      element.getAttribute?.("aria-hidden") !== "true" &&
+      element.getClientRects?.().length,
+  );
+  if (!focusable.length) return false;
+
+  const first = focusable[0];
+  const last = focusable.at(-1);
+  const active = document.activeElement;
+  if (event.shiftKey && (active === first || !modal.contains(active))) {
+    event.preventDefault();
+    last.focus();
+    return true;
+  }
+  if (!event.shiftKey && (active === last || !modal.contains(active))) {
+    event.preventDefault();
+    first.focus();
+    return true;
+  }
+  return false;
+};
+
+const SPACE_ACCENT_NAMES = [
+  "Blue",
+  "Indigo",
+  "Orange",
+  "Emerald",
+  "Violet",
+  "Sky",
+  "Red",
+  "Amber",
+  "Teal",
+  "Pink",
+];
 
 const mutationCallbacks = {
   addCard: () => {},
@@ -43,6 +131,46 @@ const getActiveSpace = (state = getState()) => {
 
 const findSpaceById = (state, spaceId) =>
   state?.spaces?.find((space) => space.id === spaceId) ?? null;
+
+const setModalCopy = (titleEl, descriptionEl, title, description) => {
+  if (titleEl) titleEl.textContent = title;
+  if (descriptionEl) descriptionEl.textContent = description;
+};
+
+const updateSpaceAccentPreview = (accent) => {
+  spaceAccentPreviewEl?.style.setProperty("--space-preview", accent);
+};
+
+const renderSpaceAccentOptions = () => {
+  if (!spaceAccentOptionsEl || spaceAccentOptionsEl.childNodes.length) return;
+
+  SPACE_ACCENT_PALETTE.forEach((accent, index) => {
+    const option = document.createElement("label");
+    option.className = "accent-option";
+
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "accent";
+    input.value = accent;
+    input.required = true;
+    input.setAttribute(
+      "aria-label",
+      `${SPACE_ACCENT_NAMES[index] ?? "Custom"} space color`,
+    );
+
+    const swatch = document.createElement("span");
+    swatch.className = "accent-swatch";
+    swatch.style.setProperty("--swatch", accent);
+    swatch.setAttribute("aria-hidden", "true");
+
+    option.appendChild(input);
+    option.appendChild(swatch);
+    spaceAccentOptionsEl.appendChild(option);
+  });
+};
+
+const isCloseAction = (event, target) =>
+  Boolean(event.target.closest?.(`[data-close="${target}"]`));
 
 const findCardContext = (
   state,
@@ -137,6 +265,7 @@ export const openConfirm = (message) =>
     confirmModalEl?.classList.remove("hidden");
     confirmModalEl?.classList.add("visible");
     confirmModalEl?.setAttribute("aria-hidden", "false");
+    focusModal(confirmModalEl, confirmCancelBtn);
   });
 
 const closeConfirm = () => {
@@ -144,6 +273,7 @@ const closeConfirm = () => {
   confirmModalEl?.classList.remove("visible");
   confirmModalEl?.setAttribute("aria-hidden", "true");
   confirmResolver = null;
+  restoreModalFocus(confirmModalEl);
 };
 
 const updateCardFormFields = (type) => {
@@ -204,16 +334,21 @@ export const openCardModal = ({
   }
 
   updateCardFormFields(cardForm.elements.type.value);
+  if (cardModalTitleEl) {
+    cardModalTitleEl.textContent = cardId ? "Edit card" : "New card";
+  }
 
   cardModalEl.classList.add("visible");
   cardModalEl.classList.remove("hidden");
   cardModalEl.setAttribute("aria-hidden", "false");
+  focusModal(cardModalEl, cardForm.elements.title);
 };
 
 export const closeModal = (modal) => {
   modal?.classList.add("hidden");
   modal?.classList.remove("visible");
   modal?.setAttribute("aria-hidden", "true");
+  restoreModalFocus(modal);
 };
 
 export const openShortcutsSheet = () => {
@@ -221,6 +356,10 @@ export const openShortcutsSheet = () => {
   shortcutsModalEl.classList.add("visible");
   shortcutsModalEl.classList.remove("hidden");
   shortcutsModalEl.setAttribute("aria-hidden", "false");
+  focusModal(
+    shortcutsModalEl,
+    shortcutsModalEl.querySelector?.("[data-close='shortcuts']"),
+  );
 };
 
 export const isInteractionOverlayOpen = (root = document) =>
@@ -303,30 +442,50 @@ export const renderCardActionMenu = (cardEl, card, options = {}) => {
 
 export const openSpaceModal = (spaceId = null) => {
   if (!spaceForm || !spaceModalEl || !spaceDeleteBtn) return;
+  renderSpaceAccentOptions();
   const state = getState();
+  let accent = getRandomAccent();
 
   if (spaceId) {
     const space = state.spaces.find((item) => item.id === spaceId);
     if (space) {
       spaceForm.elements.spaceId.value = space.id;
       spaceForm.elements.name.value = space.name;
+      accent = space.accent ?? accent;
     }
+    setModalCopy(
+      spaceModalTitleEl,
+      spaceModalDescriptionEl,
+      "Edit space",
+      "Update its name and visual identity.",
+    );
     const canDelete = state.spaces.length > 1;
     spaceDeleteBtn.hidden = !canDelete;
     spaceDeleteBtn.style.display = canDelete ? "inline-flex" : "none";
   } else {
     spaceForm.reset();
     spaceForm.elements.spaceId.value = "";
+    setModalCopy(
+      spaceModalTitleEl,
+      spaceModalDescriptionEl,
+      "New space",
+      "Create a focused home for related boards.",
+    );
     spaceDeleteBtn.hidden = true;
     spaceDeleteBtn.style.display = "none";
   }
 
+  spaceForm.elements.accent.value = accent;
+  updateSpaceAccentPreview(accent);
+
   spaceModalEl.classList.add("visible");
   spaceModalEl.classList.remove("hidden");
   spaceModalEl.setAttribute("aria-hidden", "false");
+  focusModal(spaceModalEl, spaceForm.elements.name);
 };
 
 const handleEscapeKey = (event) => {
+  if (keepFocusInModal(event)) return;
   if (event.key !== "Escape") return;
   if (cardModalEl?.classList.contains("visible")) closeModal(cardModalEl);
   if (spaceModalEl?.classList.contains("visible")) closeModal(spaceModalEl);
@@ -347,9 +506,12 @@ export const initModals = (callbacks = {}) => {
   if (initialized) return;
   initialized = true;
   hideSnackbar();
+  renderSpaceAccentOptions();
 
-  cardForm?.elements?.type?.addEventListener("change", (event) => {
-    updateCardFormFields(event.target.value);
+  cardForm?.addEventListener("change", (event) => {
+    if (event.target.matches?.('input[name="type"]')) {
+      updateCardFormFields(event.target.value);
+    }
   });
 
   cardForm?.addEventListener("submit", (event) => {
@@ -452,8 +614,14 @@ export const initModals = (callbacks = {}) => {
   });
 
   cardModalEl?.addEventListener("click", (event) => {
-    if (event.target.dataset.close === "card") {
+    if (isCloseAction(event, "card")) {
       closeModal(cardModalEl);
+    }
+  });
+
+  spaceForm?.addEventListener("change", (event) => {
+    if (event.target.matches?.('input[name="accent"]')) {
+      updateSpaceAccentPreview(event.target.value);
     }
   });
 
@@ -462,13 +630,14 @@ export const initModals = (callbacks = {}) => {
     const formData = new FormData(spaceForm);
     const spaceId = formData.get("spaceId")?.toString() ?? "";
     const name = formData.get("name")?.toString().trim();
+    const accent = formData.get("accent")?.toString() ?? "";
     if (!name) return;
 
     if (spaceId) {
-      mutationCallbacks.editSpace({ spaceId, name });
+      mutationCallbacks.editSpace({ spaceId, name, accent });
       showSnackbar("Space updated.");
     } else {
-      mutationCallbacks.addSpace({ name });
+      mutationCallbacks.addSpace({ name, accent });
       showSnackbar("Space created.");
     }
 
@@ -489,13 +658,13 @@ export const initModals = (callbacks = {}) => {
   });
 
   spaceModalEl?.addEventListener("click", (event) => {
-    if (event.target.dataset.close === "space") {
+    if (isCloseAction(event, "space")) {
       closeModal(spaceModalEl);
     }
   });
 
   confirmModalEl?.addEventListener("click", (event) => {
-    if (event.target.dataset.close === "confirm") {
+    if (isCloseAction(event, "confirm")) {
       if (confirmResolver) {
         confirmResolver(false);
       }
@@ -518,7 +687,7 @@ export const initModals = (callbacks = {}) => {
   });
 
   shortcutsModalEl?.addEventListener("click", (event) => {
-    if (event.target.dataset.close === "shortcuts") {
+    if (isCloseAction(event, "shortcuts")) {
       closeModal(shortcutsModalEl);
     }
   });

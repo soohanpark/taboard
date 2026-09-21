@@ -4,17 +4,19 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Taboard</title>
+    <script type="module" src="theme.js"></script>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <!-- media="print" defers the fetch; app.js flips it to "all"
          (inline onload handlers are blocked by the extension CSP) -->
     <link
       rel="stylesheet"
       media="print"
-      href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css"
+      href="https://cdn.jsdelivr.net/npm/@fontsource-variable/outfit@5.3.0/index.css"
     />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+    <a class="skip-link" href="#board">Skip to board</a>
     <div id="app">
       <aside
         class="tab-drawer"
@@ -24,7 +26,13 @@
         data-pinned="false"
       >
         <div class="drawer-head">
-          <div class="drawer-count" id="tab-count">0</div>
+          <div class="drawer-summary">
+            <div class="drawer-count" id="tab-count">0</div>
+            <div class="drawer-label">
+              <strong>Open tabs</strong>
+              <span>Drag one into a board</span>
+            </div>
+          </div>
           <button
             type="button"
             class="drawer-pin"
@@ -55,24 +63,46 @@
 
       <main class="workspace">
         <header class="workspace-header">
-          <nav class="space-tabs" id="space-tabs"></nav>
+          <div class="workspace-context">
+            <a
+              class="brand-lockup"
+              href="https://github.com/soohanpark/taboard"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Taboard on GitHub"
+            >
+              <img
+                src="../icons/icon32.png"
+                width="32"
+                height="32"
+                alt=""
+                aria-hidden="true"
+              />
+              <span>Taboard</span>
+            </a>
+            <nav class="space-tabs" id="space-tabs" aria-label="Spaces"></nav>
+          </div>
           <div class="workspace-actions">
-            <div class="search-control" id="search-control">
+            <div class="search-control" id="search-control" role="search">
+              <span class="search-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="11" cy="11" r="6.5"></circle>
+                  <path d="m16 16 4 4"></path>
+                </svg>
+              </span>
               <input
                 type="search"
                 id="search-input"
                 placeholder="Search cards"
                 aria-label="Search cards"
+                aria-keyshortcuts="Meta+K Control+K"
               />
-              <button
-                type="button"
-                class="icon-button search-button"
-                id="search-focus"
-                title="Search (⌘/Ctrl + K)"
-                aria-label="Focus search"
+              <kbd
+                class="search-shortcut"
+                id="search-shortcut"
+                aria-hidden="true"
+                >⌘K</kbd
               >
-                🔍
-              </button>
               <button
                 type="button"
                 class="search-clear"
@@ -151,6 +181,42 @@
             </div>
             <button
               type="button"
+              class="icon-button theme-button"
+              id="theme-toggle"
+              title="Theme: System. Switch to Light"
+              aria-label="Theme: System. Switch to Light"
+            >
+              <svg
+                class="theme-icon theme-icon-system"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <rect x="3.5" y="4" width="17" height="13" rx="3"></rect>
+                <path d="M8.5 21h7M12 17v4"></path>
+                <path d="M12 7a3.5 3.5 0 1 0 0 7Z"></path>
+              </svg>
+              <svg
+                class="theme-icon theme-icon-light"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="3.75"></circle>
+                <path
+                  d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M18.7 5.3l-1.4 1.4M6.7 17.3l-1.4 1.4"
+                ></path>
+              </svg>
+              <svg
+                class="theme-icon theme-icon-dark"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  d="M20 15.2A8.2 8.2 0 0 1 8.8 4a8.2 8.2 0 1 0 11.2 11.2Z"
+                ></path>
+              </svg>
+            </button>
+            <button
+              type="button"
               class="icon-button shortcuts-button"
               id="shortcuts-open"
               title="Keyboard shortcuts (?)"
@@ -158,19 +224,6 @@
             >
               <span aria-hidden="true">?</span>
             </button>
-            <a
-              class="icon-button github-button"
-              href="https://github.com/soohanpark/taboard"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <svg class="footer-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M12 0C5.373 0 0 5.485 0 12.253c0 5.414 3.438 10.003 8.205 11.622.6.113.82-.263.82-.583 0-.288-.01-1.051-.016-2.063-3.338.733-4.042-1.645-4.042-1.645-.546-1.41-1.333-1.787-1.333-1.787-1.09-.761.083-.745.083-.745 1.205.087 1.84 1.26 1.84 1.26 1.07 1.865 2.807 1.327 3.491 1.015.108-.793.418-1.327.76-1.632-2.665-.31-5.467-1.368-5.467-6.088 0-1.345.465-2.444 1.235-3.304-.124-.31-.535-1.563.117-3.257 0 0 1.008-.329 3.301 1.26a11.07 11.07 0 0 1 3.004-.415c1.02.004 2.046.142 3.004.415 2.291-1.589 3.297-1.26 3.297-1.26.654 1.694.243 2.947.12 3.257.77.861 1.233 1.96 1.233 3.304 0 4.735-2.807 5.775-5.481 6.079.43.376.823 1.122.823 2.263 0 1.632-.015 2.95-.015 3.352 0 .322.217.698.827.58C20.565 22.252 24 17.663 24 12.253 24 5.486 18.627 0 12 0Z"
-                ></path>
-              </svg>
-              <span>Taboard Github</span>
-            </a>
           </div>
         </header>
 
@@ -220,55 +273,91 @@
     <section class="modal hidden" id="card-modal" aria-hidden="true">
       <div class="modal-backdrop" data-close="card"></div>
       <div
-        class="modal-panel"
+        class="modal-panel card-modal-panel"
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
       >
-        <header>
-          <h3 id="modal-title">Card</h3>
+        <header class="modal-header card-modal-header">
+          <div class="modal-heading">
+            <h3 id="modal-title">Card</h3>
+          </div>
+          <button
+            type="button"
+            class="ghost-button modal-close"
+            data-close="card"
+            aria-label="Close card dialog"
+          >
+            <span aria-hidden="true">×</span>
+          </button>
         </header>
         <form id="card-form">
           <input type="hidden" name="cardId" />
           <input type="hidden" name="boardId" />
-          <label>
+          <label class="form-field">
             <span>Title</span>
-            <input name="title" required />
+            <input
+              name="title"
+              placeholder="What needs your attention?"
+              autocomplete="off"
+              required
+            />
           </label>
-          <label>
-            <span>Card type</span>
-            <select name="type">
-              <option value="link">Link</option>
-              <option value="note">Note</option>
-              <option value="todo">Todo</option>
-            </select>
-          </label>
-          <label data-card-field="url">
+          <fieldset class="card-type-field">
+            <legend>Card type</legend>
+            <div class="card-type-options">
+              <label class="card-type-option">
+                <input type="radio" name="type" value="link" required />
+                <span>Link</span>
+              </label>
+              <label class="card-type-option">
+                <input type="radio" name="type" value="note" required />
+                <span>Note</span>
+              </label>
+              <label class="card-type-option">
+                <input type="radio" name="type" value="todo" required />
+                <span>Todo</span>
+              </label>
+            </div>
+          </fieldset>
+          <label class="form-field" data-card-field="url">
             <span>Link</span>
             <input name="url" type="url" placeholder="https://example.com" />
           </label>
-          <label data-card-field="note">
+          <label class="form-field" data-card-field="note">
             <span>Description</span>
-            <textarea name="note" rows="3"></textarea>
+            <textarea
+              name="note"
+              rows="3"
+              placeholder="Add context, next steps, or a quick note."
+            ></textarea>
           </label>
-          <label>
-            <span>Tags (comma separated)</span>
-            <input name="tags" placeholder="design, reading" />
+          <label class="form-field">
+            <span>Tags</span>
+            <input
+              name="tags"
+              placeholder="Separate with commas"
+              autocomplete="off"
+            />
           </label>
           <div class="form-actions form-actions-split">
             <button
               type="button"
-              class="ghost-button danger"
+              class="ghost-button danger button-danger-subtle"
               data-delete-card
               hidden
             >
               Delete
             </button>
             <div class="form-actions-end">
-              <button type="button" class="ghost-button" data-close="card">
+              <button
+                type="button"
+                class="ghost-button button-secondary"
+                data-close="card"
+              >
                 Cancel
               </button>
-              <button type="submit">Save</button>
+              <button type="submit" class="button-primary">Save</button>
             </div>
           </div>
         </form>
@@ -278,34 +367,74 @@
     <section class="modal hidden" id="space-modal" aria-hidden="true">
       <div class="modal-backdrop" data-close="space"></div>
       <div
-        class="modal-panel"
+        class="modal-panel space-modal-panel"
         role="dialog"
         aria-modal="true"
         aria-labelledby="space-modal-title"
+        aria-describedby="space-modal-description"
       >
-        <header>
-          <h3 id="space-modal-title">Space</h3>
+        <header class="modal-header">
+          <div class="modal-heading">
+            <span class="modal-icon space-modal-icon" aria-hidden="true">
+              <span id="space-accent-preview"></span>
+            </span>
+            <div>
+              <h3 id="space-modal-title">Space</h3>
+              <p id="space-modal-description">
+                Give related boards a clear home.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="ghost-button modal-close"
+            data-close="space"
+            aria-label="Close space dialog"
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="m5 5 10 10M15 5 5 15"></path>
+            </svg>
+          </button>
         </header>
         <form id="space-form">
           <input type="hidden" name="spaceId" />
-          <label>
+          <label class="form-field">
             <span>Space name</span>
-            <input name="name" placeholder="e.g., WORK" required />
+            <input
+              name="name"
+              placeholder="e.g., Personal"
+              autocomplete="off"
+              required
+            />
           </label>
+          <fieldset class="accent-field">
+            <legend>Space color</legend>
+            <p>Used for tabs, focus states, and board accents.</p>
+            <div
+              class="accent-options"
+              id="space-accent-options"
+              role="radiogroup"
+              aria-label="Space color"
+            ></div>
+          </fieldset>
           <div class="form-actions form-actions-split">
             <button
               type="button"
-              class="ghost-button danger"
+              class="ghost-button danger button-danger-subtle"
               data-delete-space
               hidden
             >
               Delete
             </button>
             <div class="form-actions-end">
-              <button type="button" class="ghost-button" data-close="space">
+              <button
+                type="button"
+                class="ghost-button button-secondary"
+                data-close="space"
+              >
                 Cancel
               </button>
-              <button type="submit">Save</button>
+              <button type="submit" class="button-primary">Save</button>
             </div>
           </div>
         </form>
@@ -319,46 +448,64 @@
         role="dialog"
         aria-modal="true"
         aria-labelledby="shortcuts-modal-title"
+        aria-describedby="shortcuts-modal-description"
       >
-        <header>
-          <h3 id="shortcuts-modal-title">Keyboard shortcuts</h3>
+        <header class="modal-header">
+          <div class="modal-heading">
+            <span class="modal-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <rect x="3.5" y="6" width="17" height="12" rx="3"></rect>
+                <path d="M7 10h2M11 10h2M15 10h2M7 14h6M15 14h2"></path>
+              </svg>
+            </span>
+            <div>
+              <h3 id="shortcuts-modal-title">Keyboard shortcuts</h3>
+              <p id="shortcuts-modal-description">
+                Move through Taboard without leaving the keyboard.
+              </p>
+            </div>
+          </div>
           <button
             type="button"
-            class="ghost-button"
+            class="ghost-button modal-close"
             data-close="shortcuts"
-            aria-label="Close"
+            aria-label="Close keyboard shortcuts"
           >
-            ×
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="m5 5 10 10M15 5 5 15"></path>
+            </svg>
           </button>
         </header>
-        <div class="shortcuts-grid" id="shortcuts-grid">
-          <div class="shortcuts-row">
-            <kbd>N</kbd><span>New card on current board</span>
-          </div>
-          <div class="shortcuts-row">
-            <kbd>B</kbd><span>New board in current space</span>
-          </div>
-          <div class="shortcuts-row">
-            <kbd>[</kbd><span>Previous board</span>
-          </div>
-          <div class="shortcuts-row"><kbd>]</kbd><span>Next board</span></div>
-          <div class="shortcuts-row">
-            <kbd>F</kbd><span>Toggle favorite on focused card</span>
-          </div>
-          <div class="shortcuts-row">
-            <kbd>T</kbd><span>Toggle tab drawer pin</span>
-          </div>
-          <div class="shortcuts-row">
-            <kbd>?</kbd><span>Show keyboard shortcuts</span>
-          </div>
-          <div class="shortcuts-row">
-            <kbd data-key="search">⌘/Ctrl + K</kbd><span>Focus search</span>
-          </div>
-          <div class="shortcuts-row">
-            <kbd>Esc</kbd><span>Close modals / popovers / snackbar</span>
-          </div>
-          <div class="shortcuts-row">
-            <kbd data-key="undo">⌘/Ctrl + Z</kbd><span>Undo last delete</span>
+        <div class="modal-body">
+          <div class="shortcuts-grid" id="shortcuts-grid">
+            <div class="shortcuts-row">
+              <kbd>N</kbd><span>New card on current board</span>
+            </div>
+            <div class="shortcuts-row">
+              <kbd>B</kbd><span>New board in current space</span>
+            </div>
+            <div class="shortcuts-row">
+              <kbd>[</kbd><span>Previous board</span>
+            </div>
+            <div class="shortcuts-row"><kbd>]</kbd><span>Next board</span></div>
+            <div class="shortcuts-row">
+              <kbd>F</kbd><span>Toggle favorite on focused card</span>
+            </div>
+            <div class="shortcuts-row">
+              <kbd>T</kbd><span>Toggle tab drawer pin</span>
+            </div>
+            <div class="shortcuts-row">
+              <kbd>?</kbd><span>Show keyboard shortcuts</span>
+            </div>
+            <div class="shortcuts-row">
+              <kbd data-key="search">⌘/Ctrl + K</kbd><span>Focus search</span>
+            </div>
+            <div class="shortcuts-row">
+              <kbd>Esc</kbd><span>Close modals / popovers / snackbar</span>
+            </div>
+            <div class="shortcuts-row">
+              <kbd data-key="undo">⌘/Ctrl + Z</kbd><span>Undo last delete</span>
+            </div>
           </div>
         </div>
       </div>
@@ -371,16 +518,42 @@
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-modal-title"
+        aria-describedby="confirm-message"
       >
-        <header>
-          <h3 id="confirm-modal-title">Confirm</h3>
+        <header class="modal-header">
+          <div class="modal-heading">
+            <span class="modal-icon modal-icon-danger" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M12 8v5M12 16.5v.1"></path>
+                <path
+                  d="M10.2 4.8 3.6 16.3A2 2 0 0 0 5.3 19h13.4a2 2 0 0 0 1.7-2.7L13.8 4.8a2 2 0 0 0-3.6 0Z"
+                ></path>
+              </svg>
+            </span>
+            <div>
+              <h3 id="confirm-modal-title">Confirm action</h3>
+              <p>This may change content in your workspace.</p>
+            </div>
+          </div>
         </header>
-        <p id="confirm-message"></p>
-        <div class="form-actions">
-          <button type="button" class="ghost-button" id="confirm-cancel">
-            Cancel
-          </button>
-          <button type="button" id="confirm-accept">Confirm</button>
+        <div class="modal-body confirm-body">
+          <p id="confirm-message"></p>
+          <div class="form-actions">
+            <button
+              type="button"
+              class="ghost-button button-secondary"
+              id="confirm-cancel"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="button-danger-solid"
+              id="confirm-accept"
+            >
+              Confirm
+            </button>
+          </div>
         </div>
       </div>
     </section>
