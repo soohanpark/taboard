@@ -1,6 +1,9 @@
 (() => {
   const capture = globalThis.__TABOARD_CAPTURE__;
   if (!capture) throw new Error("Missing Taboard capture scenario.");
+  if (capture.themePreference) {
+    localStorage.setItem("taboard.theme.v1", capture.themePreference);
+  }
   const nativeDateNow = Date.now.bind(Date);
   Date.now = () => capture.now ?? nativeDateNow();
   const motionStyle = document.createElement("style");
@@ -112,7 +115,9 @@
     },
     identity: {
       getAuthToken(_options, callback) {
-        runtime.lastError = { message: "Authentication disabled in capture mode." };
+        runtime.lastError = {
+          message: "Authentication disabled in capture mode.",
+        };
         callback(null);
         queueMicrotask(() => {
           runtime.lastError = null;
@@ -133,11 +138,17 @@
       const driveDeadline = performance.now() + 5_000;
       while (
         performance.now() < driveDeadline &&
-        !document.getElementById("drive-control")?.classList.contains("connected")
+        !document
+          .getElementById("drive-control")
+          ?.classList.contains("connected")
       ) {
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
-      if (!document.getElementById("drive-control")?.classList.contains("connected")) {
+      if (
+        !document
+          .getElementById("drive-control")
+          ?.classList.contains("connected")
+      ) {
         throw new Error("Drive control did not reach the connected state.");
       }
       document.getElementById("drive-connect")?.click();
@@ -153,7 +164,9 @@
       }
     }
     await document.fonts?.ready;
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve)),
+    );
     document.documentElement.dataset.captureReady = "true";
   };
 

@@ -12,6 +12,14 @@ const workDir = path.join(root, "store-assets", ".work");
 const profileDir = path.join(workDir, "capture-profile");
 const chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const rawOnly = process.argv.includes("--raw-only");
+const themeArgument = process.argv.find((argument) =>
+  argument.startsWith("--theme="),
+);
+const captureTheme = themeArgument?.slice("--theme=".length) ?? null;
+
+if (captureTheme && !["system", "light", "dark"].includes(captureTheme)) {
+  throw new Error(`Unknown capture theme: ${captureTheme}`);
+}
 
 await access(chrome, fsConstants.X_OK);
 await mkdir(workDir, { recursive: true });
@@ -43,7 +51,8 @@ const injectCaptureBootstrap = (html, scenario) => {
 
 const serveFile = async (request, response) => {
   const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
-  const pathname = requestUrl.pathname === "/" ? "/newtab/index.html" : requestUrl.pathname;
+  const pathname =
+    requestUrl.pathname === "/" ? "/newtab/index.html" : requestUrl.pathname;
   const filePath = path.resolve(root, `.${decodeURIComponent(pathname)}`);
   if (!filePath.startsWith(`${root}${path.sep}`)) {
     response.writeHead(403).end("Forbidden");
@@ -59,11 +68,17 @@ const serveFile = async (request, response) => {
         response.writeHead(400).end("Unknown capture scenario");
         return;
       }
-      contents = Buffer.from(injectCaptureBootstrap(contents.toString(), scenario));
+      contents = Buffer.from(
+        injectCaptureBootstrap(contents.toString(), {
+          ...scenario,
+          themePreference: captureTheme,
+        }),
+      );
     }
     response.writeHead(200, {
       "Cache-Control": "no-store",
-      "Content-Type": mimeTypes.get(path.extname(filePath)) ?? "application/octet-stream",
+      "Content-Type":
+        mimeTypes.get(path.extname(filePath)) ?? "application/octet-stream",
     });
     response.end(contents);
   } catch (error) {
@@ -123,21 +138,26 @@ const capturePage = async (url, outputPath) => {
   while (Date.now() < deadline) {
     try {
       const info = await stat(outputPath);
-      stableChecks = info.size > 24 && info.size === previousSize ? stableChecks + 1 : 0;
+      stableChecks =
+        info.size > 24 && info.size === previousSize ? stableChecks + 1 : 0;
       previousSize = info.size;
       if (stableChecks >= 2) break;
     } catch {
       // Chrome has not written the screenshot yet.
     }
     if (exitResult && exitResult.code !== 0) {
-      throw new Error(`Chrome exited before capture (${exitResult.code}).\n${stderr}`);
+      throw new Error(
+        `Chrome exited before capture (${exitResult.code}).\n${stderr}`,
+      );
     }
     await delay(100);
   }
 
   if (stableChecks < 2) {
     child.kill("SIGKILL");
-    throw new Error(`Chrome did not capture ${url} within 45 seconds.\n${stderr}`);
+    throw new Error(
+      `Chrome did not capture ${url} within 45 seconds.\n${stderr}`,
+    );
   }
   if (!exitResult) {
     child.kill("SIGTERM");
@@ -147,7 +167,9 @@ const capturePage = async (url, outputPath) => {
 
   const dimensions = await readPngDimensions(outputPath);
   if (dimensions[0] !== 1280 || dimensions[1] !== 620) {
-    throw new Error(`${outputPath} is ${dimensions.join("x")}, expected 1280x620.`);
+    throw new Error(
+      `${outputPath} is ${dimensions.join("x")}, expected 1280x620.`,
+    );
   }
 };
 
@@ -176,13 +198,15 @@ try {
   }
 
   if (!rawOnly) {
-    const result = spawnSync(process.execPath, [
-      path.join(root, "scripts", "generate-brand-assets.mjs"),
-    ], {
-      cwd: root,
-      encoding: "utf8",
-      stdio: "inherit",
-    });
+    const result = spawnSync(
+      process.execPath,
+      [path.join(root, "scripts", "generate-brand-assets.mjs")],
+      {
+        cwd: root,
+        encoding: "utf8",
+        stdio: "inherit",
+      },
+    );
     if (result.status !== 0) {
       throw new Error("Final store asset generation failed.");
     }

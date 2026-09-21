@@ -116,6 +116,8 @@ export const renderSpaceTabs = (state, options = {}) => {
   }`;
   favoritesTab.dataset.viewMode = VIEW_MODES.FAVORITES;
   favoritesTab.textContent = "★";
+  favoritesTab.setAttribute("aria-label", "Favorites");
+  favoritesTab.title = "Favorites";
   spaceTabsEl.appendChild(favoritesTab);
 
   state.spaces.forEach((space) => {
@@ -142,6 +144,8 @@ export const renderSpaceTabs = (state, options = {}) => {
   addBtn.className = "space-tab";
   addBtn.id = "add-space-tab";
   addBtn.textContent = "＋";
+  addBtn.setAttribute("aria-label", "Create space");
+  addBtn.title = "Create space";
   spaceTabsEl.appendChild(addBtn);
 };
 
@@ -259,8 +263,7 @@ export const createCardElement = (card, boardId, searchTerm, options = {}) => {
 
   if (card.type !== "link") {
     const typeIconMap = {
-      note: "\uD83D\uDCDD",
-      todo: "\u2713",
+      note: "N",
     };
     const glyph = typeIconMap[card.type];
     if (glyph) {
@@ -494,8 +497,9 @@ export const renderBoard = (state, options = {}) => {
     const emptyState = document.createElement("div");
     emptyState.className = "board-empty-state";
     const icon = document.createElement("div");
-    icon.className = "board-empty-icon";
-    icon.textContent = "\uD83D\uDDC2\uFE0F";
+    icon.className = "board-empty-icon board-empty-icon-space";
+    icon.textContent = "S";
+    icon.setAttribute("aria-hidden", "true");
     const heading = document.createElement("p");
     heading.className = "board-empty-title";
     heading.textContent = "No space selected";
@@ -520,8 +524,9 @@ export const renderBoard = (state, options = {}) => {
     const emptyState = document.createElement("div");
     emptyState.className = "board-empty-state";
     const icon = document.createElement("div");
-    icon.className = "board-empty-icon";
-    icon.textContent = "\uD83D\uDCCB";
+    icon.className = "board-empty-icon board-empty-icon-board";
+    icon.textContent = "B";
+    icon.setAttribute("aria-hidden", "true");
     const heading = document.createElement("p");
     heading.className = "board-empty-title";
     heading.textContent = "No boards yet";
@@ -598,6 +603,7 @@ export const renderBoard = (state, options = {}) => {
   deleteBtn.className = "column-delete";
   deleteBtn.dataset.columnDelete = activeBoard.id;
   deleteBtn.title = "Delete board";
+  deleteBtn.setAttribute("aria-label", "Delete board");
   deleteBtn.textContent = "×";
   const headerControls = document.createElement("div");
   headerControls.className = "column-controls";
@@ -664,7 +670,7 @@ export const renderBoard = (state, options = {}) => {
   addCardBtn.setAttribute("aria-label", "Add card");
   const addLabel = document.createElement("span");
   addLabel.className = "add-card-label";
-  addLabel.textContent = "+ Add card";
+  addLabel.textContent = "Add card";
   addCardBtn.appendChild(addLabel);
   addCardWrapper.appendChild(addCardBtn);
 

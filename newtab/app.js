@@ -4,6 +4,8 @@ import {
   initState,
   replaceState,
   getRandomAccent,
+  getAccentTextColor,
+  applySpaceDetails,
   subscribe,
   updateState,
   softDeleteCard,
@@ -88,6 +90,7 @@ import {
   pullDriveOnStartup,
   setBootstrapSuppress,
 } from "./drive-ui.js";
+import { cycleThemePreference, subscribeTheme } from "./theme.js";
 // MV3 CSP blocks inline onload handlers, so the async stylesheet trick
 // (media="print" -> "all") must be completed here instead of in the HTML.
 document
@@ -102,25 +105,32 @@ const boardSidebarListEl = document.getElementById("board-sidebar-list");
 const boardSidebarEl = document.getElementById("board-sidebar");
 const sidebarToggleBtn = document.getElementById("sidebar-toggle");
 const sidebarExpandBtn = document.getElementById("sidebar-expand");
-const searchControl = document.getElementById("search-control");
 const searchInput = document.getElementById("search-input");
-const searchFocusBtn = document.getElementById("search-focus");
 const searchClearBtn = document.getElementById("search-clear");
+const searchShortcutEl = document.getElementById("search-shortcut");
 const shortcutsOpenBtn = document.getElementById("shortcuts-open");
+const themeToggleBtn = document.getElementById("theme-toggle");
 const isMacPlatform =
   typeof navigator !== "undefined" &&
   /Mac|iPhone|iPad|iPod/i.test(navigator.platform ?? navigator.userAgent ?? "");
-const SEARCH_PLACEHOLDER = `Search cards · ${isMacPlatform ? "⌘K" : "Ctrl+K"}`;
+const SEARCH_PLACEHOLDER = "Search cards";
+const SEARCH_SHORTCUT_LABEL = isMacPlatform ? "⌘K" : "Ctrl K";
 let currentState = null;
 let searchDebounceTimer = null;
 let prevSearchTerm = null;
 let isUnloading = false;
+let themeTransitionTimer = null;
 const getActiveSpace = (state = currentState) =>
   state?.spaces?.find((s) => s.id === state.preferences?.activeSpaceId) ??
   state?.spaces?.[0] ??
   null;
 
 const DEFAULT_ACCENT = "#007aff";
+const THEME_LABELS = {
+  system: "System",
+  light: "Light",
+  dark: "Dark",
+};
 
 const isEditableTarget = (target = document.activeElement) =>
   Boolean(
@@ -135,6 +145,19 @@ const findHoveredCardEl = () =>
   document.querySelector(".card:focus-within") ??
   null;
 
+const adaptAccentForTheme = (accent, theme) => {
+  if (theme !== "dark") return accent;
+  const channels = accent?.match?.(/[0-9a-f]{2}/gi);
+  if (!channels || channels.length !== 3) return accent;
+  const mixed = channels.map((channel) => {
+    const value = Number.parseInt(channel, 16);
+    return Math.round(value + (255 - value) * 0.26)
+      .toString(16)
+      .padStart(2, "0");
+  });
+  return `#${mixed.join("")}`;
+};
+
 const applyAccentForState = (state) => {
   const root = document.documentElement;
   if (!root) return;
@@ -142,11 +165,14 @@ const applyAccentForState = (state) => {
     root.style.removeProperty("--accent");
     root.style.removeProperty("--accent-light");
     root.style.removeProperty("--accent-medium");
+    root.style.removeProperty("--accent-contrast");
     return;
   }
   const space = getActiveSpace(state);
-  const accent = space?.accent || DEFAULT_ACCENT;
+  const sourceAccent = space?.accent || DEFAULT_ACCENT;
+  const accent = adaptAccentForTheme(sourceAccent, root.dataset.theme);
   root.style.setProperty("--accent", accent);
+  root.style.setProperty("--accent-contrast", getAccentTextColor(accent));
   if (
     typeof CSS !== "undefined" &&
     CSS.supports?.("color: color-mix(in oklch, red 50%, blue)")
@@ -161,6 +187,27 @@ const applyAccentForState = (state) => {
     );
   }
 };
+const handleThemeChange = ({ preference, resolved }) => {
+  if (themeToggleBtn) {
+    const nextPreference =
+      preference === "system"
+        ? "light"
+        : preference === "light"
+          ? "dark"
+          : "system";
+    const label = THEME_LABELS[preference];
+    const nextLabel = THEME_LABELS[nextPreference];
+    themeToggleBtn.dataset.themePreference = preference;
+    themeToggleBtn.dataset.resolvedTheme = resolved;
+    themeToggleBtn.title = `Theme: ${label}. Switch to ${nextLabel}`;
+    themeToggleBtn.setAttribute(
+      "aria-label",
+      `Theme: ${label}. Switch to ${nextLabel}`,
+    );
+  }
+  if (currentState) applyAccentForState(currentState);
+};
+const unsubscribeTheme = subscribeTheme(handleThemeChange);
 const findBoard = (space, boardId) =>
   space?.boards?.find((board) => board.id === boardId) ?? null;
 const findSpaceById = (state, spaceId) =>
@@ -310,9 +357,9 @@ const handleStateChange = (state) => {
   }
   if (searchInput !== document.activeElement)
     searchInput.value = state.preferences.searchTerm ?? "";
-  if (searchClearBtn) {
-    searchClearBtn.hidden = !(state.preferences.searchTerm ?? "");
-  }
+  const hasSearchTerm = Boolean(state.preferences.searchTerm ?? "");
+  if (searchClearBtn) searchClearBtn.hidden = !hasSearchTerm;
+  if (searchShortcutEl) searchShortcutEl.hidden = hasSearchTerm;
   schedulePersist(state);
   scheduleDriveSync(state, { trigger: metaAction });
 };
@@ -377,22 +424,19 @@ const addCard = ({ boardId, spaceId, payload, favicon }) => {
 const deleteCard = ({ cardId }) => {
   performSoftDeleteCard(cardId);
 };
-const editSpace = ({ spaceId, name }) =>
+const editSpace = ({ spaceId, name, accent }) =>
   updateState((draft) => {
     const space = draft.spaces.find((item) => item.id === spaceId);
-    if (space) {
-      space.name = name;
-      space.updatedAt = new Date().toISOString();
-    }
+    applySpaceDetails(space, { name, accent });
   });
-const addSpace = ({ name }) => {
+const addSpace = ({ name, accent }) => {
   const spaceId = generateId("space");
   updateState((draft) => {
     const now = new Date().toISOString();
     draft.spaces.push({
       id: spaceId,
       name,
-      accent: getRandomAccent(),
+      accent: accent || getRandomAccent(),
       createdAt: now,
       updatedAt: now,
       boards: [],
@@ -1121,7 +1165,9 @@ addColumnBtn?.addEventListener("click", () => {
 if (searchInput) {
   searchInput.placeholder = SEARCH_PLACEHOLDER;
 }
-searchFocusBtn.addEventListener("click", focusSearchInput);
+if (searchShortcutEl) {
+  searchShortcutEl.textContent = SEARCH_SHORTCUT_LABEL;
+}
 searchClearBtn?.addEventListener("click", () => {
   searchInput.value = "";
   searchInput.dispatchEvent(new Event("input", { bubbles: true }));
@@ -1136,6 +1182,16 @@ searchInput?.addEventListener("keydown", (event) => {
   }
 });
 shortcutsOpenBtn?.addEventListener("click", openShortcutsSheet);
+themeToggleBtn?.addEventListener("click", () => {
+  const root = document.documentElement;
+  root.classList.add("theme-transitioning");
+  cycleThemePreference();
+  clearTimeout(themeTransitionTimer);
+  themeTransitionTimer = setTimeout(
+    () => root.classList.remove("theme-transitioning"),
+    280,
+  );
+});
 const navigateActiveBoard = (direction) => {
   const space = getActiveSpace();
   if (!space?.boards?.length) return;
@@ -1284,6 +1340,8 @@ window.addEventListener("keydown", (event) => {
 });
 searchInput.addEventListener("input", (event) => {
   const value = event.target.value;
+  if (searchClearBtn) searchClearBtn.hidden = !value;
+  if (searchShortcutEl) searchShortcutEl.hidden = Boolean(value);
   clearTimeout(searchDebounceTimer);
   searchDebounceTimer = setTimeout(
     () =>
@@ -1300,6 +1358,8 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("beforeunload", () => {
   isUnloading = true;
+  clearTimeout(themeTransitionTimer);
+  unsubscribeTheme();
   cleanupTabs();
   cleanupDriveUI();
   cleanupDrag();
