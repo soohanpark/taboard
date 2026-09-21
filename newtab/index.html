@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Taboard</title>
+    <script type="module" src="theme.js"></script>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <!-- media="print" defers the fetch; app.js flips it to "all"
          (inline onload handlers are blocked by the extension CSP) -->
@@ -180,6 +181,42 @@
             </div>
             <button
               type="button"
+              class="icon-button theme-button"
+              id="theme-toggle"
+              title="Theme: System. Switch to Light"
+              aria-label="Theme: System. Switch to Light"
+            >
+              <svg
+                class="theme-icon theme-icon-system"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <rect x="3.5" y="4" width="17" height="13" rx="3"></rect>
+                <path d="M8.5 21h7M12 17v4"></path>
+                <path d="M12 7a3.5 3.5 0 1 0 0 7Z"></path>
+              </svg>
+              <svg
+                class="theme-icon theme-icon-light"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="3.75"></circle>
+                <path
+                  d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M18.7 5.3l-1.4 1.4M6.7 17.3l-1.4 1.4"
+                ></path>
+              </svg>
+              <svg
+                class="theme-icon theme-icon-dark"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  d="M20 15.2A8.2 8.2 0 0 1 8.8 4a8.2 8.2 0 1 0 11.2 11.2Z"
+                ></path>
+              </svg>
+            </button>
+            <button
+              type="button"
               class="icon-button shortcuts-button"
               id="shortcuts-open"
               title="Keyboard shortcuts (?)"
@@ -187,19 +224,6 @@
             >
               <span aria-hidden="true">?</span>
             </button>
-            <a
-              class="icon-button github-button"
-              href="https://github.com/soohanpark/taboard"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <svg class="footer-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M12 0C5.373 0 0 5.485 0 12.253c0 5.414 3.438 10.003 8.205 11.622.6.113.82-.263.82-.583 0-.288-.01-1.051-.016-2.063-3.338.733-4.042-1.645-4.042-1.645-.546-1.41-1.333-1.787-1.333-1.787-1.09-.761.083-.745.083-.745 1.205.087 1.84 1.26 1.84 1.26 1.07 1.865 2.807 1.327 3.491 1.015.108-.793.418-1.327.76-1.632-2.665-.31-5.467-1.368-5.467-6.088 0-1.345.465-2.444 1.235-3.304-.124-.31-.535-1.563.117-3.257 0 0 1.008-.329 3.301 1.26a11.07 11.07 0 0 1 3.004-.415c1.02.004 2.046.142 3.004.415 2.291-1.589 3.297-1.26 3.297-1.26.654 1.694.243 2.947.12 3.257.77.861 1.233 1.96 1.233 3.304 0 4.735-2.807 5.775-5.481 6.079.43.376.823 1.122.823 2.263 0 1.632-.015 2.95-.015 3.352 0 .322.217.698.827.58C20.565 22.252 24 17.663 24 12.253 24 5.486 18.627 0 12 0Z"
-                ></path>
-              </svg>
-              <span>Taboard Github</span>
-            </a>
           </div>
         </header>
 
@@ -319,17 +343,21 @@
           <div class="form-actions form-actions-split">
             <button
               type="button"
-              class="ghost-button danger"
+              class="ghost-button danger button-danger-subtle"
               data-delete-card
               hidden
             >
               Delete
             </button>
             <div class="form-actions-end">
-              <button type="button" class="ghost-button" data-close="card">
+              <button
+                type="button"
+                class="ghost-button button-secondary"
+                data-close="card"
+              >
                 Cancel
               </button>
-              <button type="submit">Save</button>
+              <button type="submit" class="button-primary">Save</button>
             </div>
           </div>
         </form>
@@ -392,17 +420,21 @@
           <div class="form-actions form-actions-split">
             <button
               type="button"
-              class="ghost-button danger"
+              class="ghost-button danger button-danger-subtle"
               data-delete-space
               hidden
             >
               Delete
             </button>
             <div class="form-actions-end">
-              <button type="button" class="ghost-button" data-close="space">
+              <button
+                type="button"
+                class="ghost-button button-secondary"
+                data-close="space"
+              >
                 Cancel
               </button>
-              <button type="submit">Save</button>
+              <button type="submit" class="button-primary">Save</button>
             </div>
           </div>
         </form>
@@ -507,10 +539,20 @@
         <div class="modal-body confirm-body">
           <p id="confirm-message"></p>
           <div class="form-actions">
-            <button type="button" class="ghost-button" id="confirm-cancel">
+            <button
+              type="button"
+              class="ghost-button button-secondary"
+              id="confirm-cancel"
+            >
               Cancel
             </button>
-            <button type="button" id="confirm-accept">Confirm</button>
+            <button
+              type="button"
+              class="button-danger-solid"
+              id="confirm-accept"
+            >
+              Confirm
+            </button>
           </div>
         </div>
       </div>

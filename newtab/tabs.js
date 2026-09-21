@@ -152,6 +152,7 @@ export const renderOpenTabs = () => {
     closeBtn.className = "tab-close";
     closeBtn.dataset.closeTabId = tab.id;
     closeBtn.title = "Close tab";
+    closeBtn.setAttribute("aria-label", `Close ${tab.title || "tab"}`);
     closeBtn.textContent = "×";
     item.appendChild(closeBtn);
 

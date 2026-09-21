@@ -29,6 +29,74 @@ let confirmResolver = null;
 let initialized = false;
 let lastSnackbarUndo = null;
 let activeCardMenu = null;
+const modalFocusOrigins = new WeakMap();
+
+const MODAL_FOCUSABLE_SELECTOR = [
+  "button:not([disabled]):not([hidden])",
+  "input:not([disabled]):not([hidden])",
+  "textarea:not([disabled]):not([hidden])",
+  "select:not([disabled]):not([hidden])",
+  '[href]:not([tabindex="-1"])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
+
+const focusModal = (modal, preferredTarget = null) => {
+  if (!modal) return;
+  const origin = document.activeElement;
+  if (origin?.focus && !modalFocusOrigins.has(modal)) {
+    modalFocusOrigins.set(modal, origin);
+  }
+  queueMicrotask(() => {
+    if (!modal.classList.contains("visible")) return;
+    const target =
+      preferredTarget ?? modal.querySelector?.(MODAL_FOCUSABLE_SELECTOR);
+    target?.focus?.();
+  });
+};
+
+const restoreModalFocus = (modal) => {
+  if (!modal) return;
+  const origin = modalFocusOrigins.get(modal);
+  modalFocusOrigins.delete(modal);
+  queueMicrotask(() => {
+    if (!getVisibleModal()) origin?.focus?.();
+  });
+};
+
+const getVisibleModal = () =>
+  [confirmModalEl, cardModalEl, spaceModalEl, shortcutsModalEl].find((modal) =>
+    modal?.classList.contains("visible"),
+  ) ?? null;
+
+const keepFocusInModal = (event) => {
+  if (event.key !== "Tab") return false;
+  const modal = getVisibleModal();
+  if (!modal?.querySelectorAll) return false;
+  const focusable = [
+    ...modal.querySelectorAll(MODAL_FOCUSABLE_SELECTOR),
+  ].filter(
+    (element) =>
+      !element.hidden &&
+      element.getAttribute?.("aria-hidden") !== "true" &&
+      element.getClientRects?.().length,
+  );
+  if (!focusable.length) return false;
+
+  const first = focusable[0];
+  const last = focusable.at(-1);
+  const active = document.activeElement;
+  if (event.shiftKey && (active === first || !modal.contains(active))) {
+    event.preventDefault();
+    last.focus();
+    return true;
+  }
+  if (!event.shiftKey && (active === last || !modal.contains(active))) {
+    event.preventDefault();
+    first.focus();
+    return true;
+  }
+  return false;
+};
 
 const SPACE_ACCENT_NAMES = [
   "Blue",
@@ -197,6 +265,7 @@ export const openConfirm = (message) =>
     confirmModalEl?.classList.remove("hidden");
     confirmModalEl?.classList.add("visible");
     confirmModalEl?.setAttribute("aria-hidden", "false");
+    focusModal(confirmModalEl, confirmCancelBtn);
   });
 
 const closeConfirm = () => {
@@ -204,6 +273,7 @@ const closeConfirm = () => {
   confirmModalEl?.classList.remove("visible");
   confirmModalEl?.setAttribute("aria-hidden", "true");
   confirmResolver = null;
+  restoreModalFocus(confirmModalEl);
 };
 
 const updateCardFormFields = (type) => {
@@ -271,12 +341,14 @@ export const openCardModal = ({
   cardModalEl.classList.add("visible");
   cardModalEl.classList.remove("hidden");
   cardModalEl.setAttribute("aria-hidden", "false");
+  focusModal(cardModalEl, cardForm.elements.title);
 };
 
 export const closeModal = (modal) => {
   modal?.classList.add("hidden");
   modal?.classList.remove("visible");
   modal?.setAttribute("aria-hidden", "true");
+  restoreModalFocus(modal);
 };
 
 export const openShortcutsSheet = () => {
@@ -284,6 +356,10 @@ export const openShortcutsSheet = () => {
   shortcutsModalEl.classList.add("visible");
   shortcutsModalEl.classList.remove("hidden");
   shortcutsModalEl.setAttribute("aria-hidden", "false");
+  focusModal(
+    shortcutsModalEl,
+    shortcutsModalEl.querySelector?.("[data-close='shortcuts']"),
+  );
 };
 
 export const isInteractionOverlayOpen = (root = document) =>
@@ -405,9 +481,11 @@ export const openSpaceModal = (spaceId = null) => {
   spaceModalEl.classList.add("visible");
   spaceModalEl.classList.remove("hidden");
   spaceModalEl.setAttribute("aria-hidden", "false");
+  focusModal(spaceModalEl, spaceForm.elements.name);
 };
 
 const handleEscapeKey = (event) => {
+  if (keepFocusInModal(event)) return;
   if (event.key !== "Escape") return;
   if (cardModalEl?.classList.contains("visible")) closeModal(cardModalEl);
   if (spaceModalEl?.classList.contains("visible")) closeModal(spaceModalEl);

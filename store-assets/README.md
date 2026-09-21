@@ -32,6 +32,10 @@ npm run assets:verify
 
 `npm run assets:capture` starts an isolated local server, loads the real Taboard UI with synthetic demo data, captures five states, and composes every uploadable image. It does not use personal tabs, accounts, or browser storage.
 
+Use `npm run assets:capture -- --raw-only --theme=light` (or `dark`) to
+visually verify a specific appearance without regenerating the final promo
+composites.
+
 `store-assets/.work/` contains disposable raw captures and render sheets. It is ignored by Git and must not be uploaded to the Chrome Web Store.
 
 The OAuth-bearing local `manifest.json` remains ignored. `manifest.example.json` is the tracked manifest template and includes the 16, 32, 48, and 128 px icon declarations.
