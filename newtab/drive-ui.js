@@ -50,7 +50,18 @@ let driveMenuOpen = false;
 
 const SYNC_TIMEOUT_MS = 30000;
 
-const computeSpacesHash = (state) => JSON.stringify(state?.spaces ?? []);
+// Content updates replace the spaces tree; preference updates share it.
+const spacesHashes = new WeakMap();
+const computeSpacesHash = (state) => {
+  const spaces = state?.spaces;
+  if (!spaces) return "[]";
+  let hash = spacesHashes.get(spaces);
+  if (hash === undefined) {
+    hash = JSON.stringify(spaces);
+    spacesHashes.set(spaces, hash);
+  }
+  return hash;
+};
 
 // Pushes strip favicons while local normalization guarantees them, so a
 // remote state never hashes equal to a local one under computeSpacesHash.
@@ -278,6 +289,9 @@ export const scheduleDriveSync = (
   { immediate = false, trigger = null } = {},
 ) => {
   if (!state) return;
+  if (!isDriveSyncSuppressed && getDriveSnapshot().status !== "connected") {
+    return;
+  }
   const spacesHash = computeSpacesHash(state);
   if (isDriveSyncSuppressed) {
     // Suppressed notifications carry system-applied states (bootstrap load,
@@ -285,7 +299,6 @@ export const scheduleDriveSync = (
     dirtyBaselineSpacesHash = spacesHash;
     return;
   }
-  if (getDriveSnapshot().status !== "connected") return;
   // Until we have successfully resolved Drive state (pulled or seeded),
   // never push — otherwise a fresh profile would overwrite Drive content.
   // Content edits still mark the dirty flag so a failed startup pull can't

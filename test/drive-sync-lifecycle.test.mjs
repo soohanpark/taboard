@@ -113,6 +113,8 @@ const {
   getState,
   initState,
   isDefaultSeedState,
+  subscribe,
+  updatePreferences,
   updateState,
 } = await import("../newtab/state.js");
 
@@ -207,6 +209,35 @@ const resetHarness = (localState) => {
 // --- tests -------------------------------------------------------------------
 
 describe("dirty flag lifecycle", () => {
+  test("shared content stays clean across preference changes and later edits still sync", async () => {
+    resetHarness(makeState([makeCard("A0")]));
+    remoteFile = {
+      data: { version: 1, spaces: [], preferences: {} },
+      modifiedTime: "2026-01-01T00:00:01.000Z",
+    };
+    await driveUi.pullDriveOnStartup({ reason: "startup" });
+    assert.equal(calls.push.length, 1);
+
+    const unsubscribe = subscribe((state) =>
+      driveUi.scheduleDriveSync(state, { immediate: true }),
+    );
+    try {
+      updatePreferences({ searchTerm: "query" });
+      updatePreferences({ tabDrawerPinned: true });
+      await settle();
+      assert.equal(calls.push.length, 1);
+      assert.equal(storedDirty, false);
+
+      addCard("B");
+      await settle();
+      assert.equal(calls.push.length, 2);
+      assert.deepEqual(cardTitles(calls.push.at(-1)), ["A0", "B"]);
+      assert.equal(storedDirty, false);
+    } finally {
+      unsubscribe();
+    }
+  });
+
   test("dirty marker survives an edit landing during an in-flight push", async () => {
     resetHarness(makeState([makeCard("A0")]));
     remoteFile = {

@@ -380,6 +380,25 @@ export const updateState = (mutator, meta = {}) => {
   delete appState.meta;
 };
 
+// UI preferences do not modify content. Keep the spaces tree shared so a
+// search or board switch does not clone every card in the workspace.
+export const updatePreferences = (preferences) => {
+  const patch = clone(preferences);
+  if (
+    Object.entries(patch).every(([key, value]) =>
+      Object.is(appState.preferences[key], value),
+    )
+  ) {
+    return;
+  }
+  appState = {
+    ...appState,
+    preferences: { ...appState.preferences, ...patch },
+    lastUpdated: new Date().toISOString(),
+  };
+  notify();
+};
+
 export const softDeleteCard = (state, cardId) => {
   const snapshot = clone(state);
   const next = clone(state);
@@ -565,30 +584,37 @@ export const restoreDeletedSpace = (state, payload) => {
   return next;
 };
 
-const matchCardForCount = (card, term) => {
-  if (!term) return true;
+export const createCardSearchMatcher = (searchTerm) => {
+  const term = (searchTerm ?? "").trim().toLowerCase();
+  if (!term) return () => true;
   if (term.startsWith("#")) {
-    const tag = term.slice(1).trim().toLowerCase();
-    if (!tag) return true;
-    return (card.tags ?? []).some((t) => t.toLowerCase().includes(tag));
+    const tag = term.slice(1).trim();
+    return tag
+      ? (card) => (card.tags ?? []).some((t) => t.toLowerCase().includes(tag))
+      : () => true;
   }
-  const haystack = [card.title, card.note, card.url, card.tags?.join(" ") ?? ""]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  return haystack.includes(term.toLowerCase());
+  return (card) =>
+    [card.title, card.note, card.url, card.tags?.join(" ") ?? ""]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+      .includes(term);
 };
 
+export const cardMatchesSearch = (card, term) =>
+  createCardSearchMatcher(term)(card);
+
 export const countMatchesAcrossSpaces = (state, term) => {
-  const trimmed = (term ?? "").trim();
+  const matchesSearch = createCardSearchMatcher(term);
   const result = { perBoard: {}, perSpace: {}, total: 0 };
   if (!state?.spaces?.length) return result;
   for (const space of state.spaces) {
     let spaceTotal = 0;
     for (const board of space.boards ?? []) {
-      const matches = (board.cards ?? []).filter((card) =>
-        matchCardForCount(card, trimmed),
-      ).length;
+      let matches = 0;
+      for (const card of board.cards ?? []) {
+        if (matchesSearch(card)) matches += 1;
+      }
       result.perBoard[board.id] = {
         match: matches,
         total: (board.cards ?? []).length,
