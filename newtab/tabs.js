@@ -5,7 +5,7 @@ import {
   SEARCH_DEBOUNCE_MS,
 } from "./constants.js";
 import { getDraggingCard } from "./drag.js";
-import { getState, updateState } from "./state.js";
+import { getState, updatePreferences } from "./state.js";
 
 const tabListEl = document.getElementById("tab-list");
 const tabCountEl = document.getElementById("tab-count");
@@ -36,17 +36,13 @@ const applyDrawerPinState = (pinned) => {
   }
 };
 
-export const syncTabDrawerPinFromState = () => {
-  const state = getState();
+export const syncTabDrawerPinFromState = (state = getState()) => {
   applyDrawerPinState(Boolean(state?.preferences?.tabDrawerPinned));
 };
 
 export const toggleTabDrawerPin = () => {
   const next = !Boolean(getState()?.preferences?.tabDrawerPinned);
-  updateState((draft) => {
-    if (!draft.preferences) draft.preferences = {};
-    draft.preferences.tabDrawerPinned = next;
-  });
+  updatePreferences({ tabDrawerPinned: next });
   applyDrawerPinState(next);
 };
 

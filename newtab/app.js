@@ -8,6 +8,7 @@ import {
   applySpaceDetails,
   subscribe,
   updateState,
+  updatePreferences,
   softDeleteCard,
   softDeleteBoard,
   softDeleteSpace,
@@ -30,7 +31,6 @@ import {
   renderBoardSidebar,
   renderFavoritesBoard,
   resolveCardFavicon,
-  invalidateSearchCache,
 } from "./render.js";
 import {
   showSnackbar,
@@ -117,7 +117,6 @@ const SEARCH_PLACEHOLDER = "Search cards";
 const SEARCH_SHORTCUT_LABEL = isMacPlatform ? "⌘K" : "Ctrl K";
 let currentState = null;
 let searchDebounceTimer = null;
-let prevSearchTerm = null;
 let isUnloading = false;
 let themeTransitionTimer = null;
 const getActiveSpace = (state = currentState) =>
@@ -291,11 +290,7 @@ const ensureActiveBoardId = (state) => {
     if (!current?.boards?.length) return;
     const currentId = currentState?.preferences?.activeBoardId;
     if (currentId && current.boards.some((b) => b.id === currentId)) return;
-    updateState((draft) => {
-      const s = getActiveSpace(draft);
-      if (!s?.boards?.length) return;
-      draft.preferences.activeBoardId = s.boards[0]?.id ?? null;
-    });
+    updatePreferences({ activeBoardId: current.boards[0]?.id ?? null });
   });
 };
 const handleStateChange = (state) => {
@@ -303,17 +298,7 @@ const handleStateChange = (state) => {
   const metaAction = meta?.action ?? null;
   currentState = state;
   applyAccentForState(state);
-  syncTabDrawerPinFromState();
-  const currentSearchTerm = state.preferences.searchTerm ?? "";
-  if (
-    metaAction === "add-card" ||
-    metaAction === "edit-card" ||
-    metaAction === "delete-card" ||
-    currentSearchTerm !== prevSearchTerm
-  ) {
-    invalidateSearchCache();
-  }
-  prevSearchTerm = currentSearchTerm;
+  syncTabDrawerPinFromState(state);
   renderSpaceTabs(state, { spaceTabsEl });
   if (state.preferences.viewMode === VIEW_MODES.FAVORITES) {
     renderFavoritesBoard(state, { boardEl });
@@ -527,10 +512,10 @@ const handleCardPrimaryClick = (cardElement) => {
     return;
   }
   if (isReadOnly && spaceId && boardId) {
-    updateState((draft) => {
-      draft.preferences.viewMode = VIEW_MODES.SPACES;
-      draft.preferences.activeSpaceId = spaceId;
-      draft.preferences.activeBoardId = boardId;
+    updatePreferences({
+      viewMode: VIEW_MODES.SPACES,
+      activeSpaceId: spaceId,
+      activeBoardId: boardId,
     });
   }
 };
@@ -657,16 +642,17 @@ spaceTabsEl.addEventListener("click", (event) => {
   if (!tab) return;
   if (tab.id === "add-space-tab") return openSpaceModal();
   if (tab.dataset.viewMode === VIEW_MODES.FAVORITES)
-    return updateState((draft) => {
-      draft.preferences.viewMode = VIEW_MODES.FAVORITES;
+    return updatePreferences({
+      viewMode: VIEW_MODES.FAVORITES,
     });
-  if (tab.dataset.spaceId)
-    updateState((draft) => {
-      draft.preferences.viewMode = VIEW_MODES.SPACES;
-      draft.preferences.activeSpaceId = tab.dataset.spaceId;
-      const newSpace = draft.spaces.find((s) => s.id === tab.dataset.spaceId);
-      draft.preferences.activeBoardId = newSpace?.boards?.[0]?.id ?? null;
+  if (tab.dataset.spaceId) {
+    const newSpace = findSpaceById(currentState, tab.dataset.spaceId);
+    updatePreferences({
+      viewMode: VIEW_MODES.SPACES,
+      activeSpaceId: tab.dataset.spaceId,
+      activeBoardId: newSpace?.boards?.[0]?.id ?? null,
     });
+  }
 });
 spaceTabsEl.addEventListener("contextmenu", (event) => {
   const tab = event.target.closest(".space-tab");
@@ -761,10 +747,10 @@ boardEl.addEventListener("click", async (event) => {
   if (bannerEl?.dataset.jumpBoardId) {
     const targetSpaceId = bannerEl.dataset.jumpSpaceId || null;
     const targetBoardId = bannerEl.dataset.jumpBoardId;
-    updateState((draft) => {
-      if (targetSpaceId) draft.preferences.activeSpaceId = targetSpaceId;
-      draft.preferences.activeBoardId = targetBoardId;
-      draft.preferences.viewMode = VIEW_MODES.SPACES;
+    updatePreferences({
+      activeSpaceId: targetSpaceId ?? currentState.preferences.activeSpaceId,
+      activeBoardId: targetBoardId,
+      viewMode: VIEW_MODES.SPACES,
     });
     return;
   }
@@ -979,18 +965,14 @@ boardEl.addEventListener("contextmenu", (event) => {
 boardSidebarListEl?.addEventListener("click", (event) => {
   const item = event.target.closest(".board-sidebar-item");
   if (!item?.dataset.boardId) return;
-  updateState((draft) => {
-    draft.preferences.activeBoardId = item.dataset.boardId;
-  });
+  updatePreferences({ activeBoardId: item.dataset.boardId });
 });
 boardSidebarListEl?.addEventListener("contextmenu", (event) => {
   const item = event.target.closest(".board-sidebar-item");
   if (!item?.dataset.boardId) return;
   event.preventDefault();
   // Select the board on right-click as well
-  updateState((draft) => {
-    draft.preferences.activeBoardId = item.dataset.boardId;
-  });
+  updatePreferences({ activeBoardId: item.dataset.boardId });
 });
 let draggingSidebarBoardId = null;
 boardSidebarListEl?.addEventListener("dragstart", (event) => {
@@ -1203,9 +1185,7 @@ const navigateActiveBoard = (direction) => {
       ? Math.min(idx + 1, space.boards.length - 1)
       : Math.max(idx - 1, 0);
   if (nextIdx === idx) return;
-  updateState((draft) => {
-    draft.preferences.activeBoardId = space.boards[nextIdx].id;
-  });
+  updatePreferences({ activeBoardId: space.boards[nextIdx].id });
   const nextItem = boardSidebarListEl?.querySelector(
     `[data-board-id="${space.boards[nextIdx].id}"]`,
   );
@@ -1264,9 +1244,7 @@ window.addEventListener("keydown", (event) => {
         const idx = Number(digitMatch[1]) - 1;
         if (idx < space.boards.length) {
           event.preventDefault();
-          updateState((draft) => {
-            draft.preferences.activeBoardId = space.boards[idx].id;
-          });
+          updatePreferences({ activeBoardId: space.boards[idx].id });
         }
         return;
       }
@@ -1344,10 +1322,7 @@ searchInput.addEventListener("input", (event) => {
   if (searchShortcutEl) searchShortcutEl.hidden = Boolean(value);
   clearTimeout(searchDebounceTimer);
   searchDebounceTimer = setTimeout(
-    () =>
-      updateState((draft) => {
-        draft.preferences.searchTerm = value;
-      }),
+    () => updatePreferences({ searchTerm: value }),
     SEARCH_DEBOUNCE_MS,
   );
 });

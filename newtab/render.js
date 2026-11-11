@@ -1,5 +1,11 @@
 import { FALLBACK_FAVICON, VIEW_MODES } from "./constants.js";
-import { countMatchesAcrossSpaces } from "./state.js";
+import {
+  cardMatchesSearch,
+  countMatchesAcrossSpaces,
+  createCardSearchMatcher,
+} from "./state.js";
+
+export { cardMatchesSearch } from "./state.js";
 
 const getBoardEl = (options = {}) =>
   options.boardEl ?? document.getElementById("board");
@@ -7,13 +13,22 @@ const getBoardEl = (options = {}) =>
 const getSpaceTabsEl = (options = {}) =>
   options.spaceTabsEl ?? document.getElementById("space-tabs");
 
-let searchMemoCache = new Map();
-let lastRenderedBoardKey = null;
-let lastSpaceTabsKey = null;
-let lastSidebarKey = null;
+const boardRenderCache = new WeakMap();
+const favoritesRenderCache = new WeakMap();
+let searchCountsCache = new WeakMap();
+const spaceTabsKeys = new WeakMap();
+const sidebarKeys = new WeakMap();
 
 export const invalidateSearchCache = () => {
-  searchMemoCache.clear();
+  searchCountsCache = new WeakMap();
+};
+
+const getSearchCounts = (state, term) => {
+  const cached = searchCountsCache.get(state.spaces);
+  if (cached?.term === term) return cached.counts;
+  const counts = countMatchesAcrossSpaces(state, term);
+  searchCountsCache.set(state.spaces, { term, counts });
+  return counts;
 };
 
 export const isSafeIconUrl = (icon) => {
@@ -69,44 +84,17 @@ export const getCardFavicon = (card) => {
 export const formatCount = (count) =>
   `${count} ${count === 1 ? "site" : "sites"}`;
 
-export const cardMatchesSearch = (card, searchTerm) => {
-  if (!searchTerm) return true;
-  const key = `${searchTerm}:${card.id}`;
-  if (searchMemoCache.has(key)) return searchMemoCache.get(key);
-  const term = searchTerm.trim();
-  let result;
-  if (term.startsWith("#")) {
-    const tag = term.slice(1).trim().toLowerCase();
-    result = tag
-      ? (card.tags ?? []).some((t) => t.toLowerCase().includes(tag))
-      : true;
-  } else {
-    const haystack = [
-      card.title,
-      card.note,
-      card.url,
-      card.tags?.join(" ") ?? "",
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    result = haystack.includes(term.toLowerCase());
-  }
-  searchMemoCache.set(key, result);
-  return result;
-};
-
 export const renderSpaceTabs = (state, options = {}) => {
   const spaceTabsEl = getSpaceTabsEl(options);
   if (!spaceTabsEl) return;
   const spaceKey =
-    state.spaces.map((s) => s.id + ":" + s.name).join("|") +
+    JSON.stringify(state.spaces.map((s) => [s.id, s.name, s.accent])) +
     "|" +
     state.preferences.activeSpaceId +
     "|" +
     state.preferences.viewMode;
-  if (spaceKey === lastSpaceTabsKey) return;
-  lastSpaceTabsKey = spaceKey;
+  if (spaceKey === spaceTabsKeys.get(spaceTabsEl)) return;
+  spaceTabsKeys.set(spaceTabsEl, spaceKey);
   spaceTabsEl.replaceChildren();
 
   const favoritesTab = document.createElement("button");
@@ -357,9 +345,7 @@ export const renderBoardSidebar = (state, options = {}) => {
   }
   sidebarEl.classList.remove("board-sidebar-hidden");
 
-  const matchCounts = searchTerm
-    ? countMatchesAcrossSpaces(state, searchTerm)
-    : null;
+  const matchCounts = searchTerm ? getSearchCounts(state, searchTerm) : null;
 
   const sidebarKey =
     (space?.boards
@@ -381,8 +367,8 @@ export const renderBoardSidebar = (state, options = {}) => {
     activeBoardId +
     "|" +
     searchTerm;
-  if (sidebarKey === lastSidebarKey) return;
-  lastSidebarKey = sidebarKey;
+  if (sidebarKey === sidebarKeys.get(sidebarListEl)) return;
+  sidebarKeys.set(sidebarListEl, sidebarKey);
 
   sidebarListEl.replaceChildren();
 
@@ -438,13 +424,96 @@ export const renderBoardSidebar = (state, options = {}) => {
   });
 };
 
+const getCardRenderKey = (card) =>
+  JSON.stringify([
+    card.id,
+    card.type,
+    card.title,
+    card.note,
+    card.url,
+    card.tags,
+    card.favorite,
+    card.done,
+    card.favicon,
+  ]);
+
+const updateBoardCards = (view, board, searchTerm, options) => {
+  const sameCards = view.cards === board.cards;
+  if (sameCards && view.searchTerm === searchTerm && !options.metaAction)
+    return;
+
+  const nextEntries = new Map();
+  const matchesSearch = createCardSearchMatcher(searchTerm);
+  for (const card of board.cards) {
+    const previous = view.entries.get(card.id);
+    const key = sameCards ? previous?.key : getCardRenderKey(card);
+    const entry =
+      previous?.key === key
+        ? previous
+        : {
+            key,
+            el: createCardElement(card, board.id, searchTerm, {
+              animateCards: options.animateCards,
+              spaceId: view.spaceId,
+              onCardDragStart: options.onCardDragStart,
+              onCardDragEnd: options.onCardDragEnd,
+            }),
+          };
+    entry.el.classList.toggle(
+      "card-hidden",
+      Boolean(searchTerm) && !matchesSearch(card),
+    );
+    nextEntries.set(card.id, entry);
+  }
+
+  for (const [id, entry] of view.entries) {
+    if (nextEntries.get(id)?.el !== entry.el) entry.el.remove();
+  }
+
+  // Preserve existing nodes, focus, and scroll while reconciling only the
+  // cards that changed or moved. The drop indicator stays at the end.
+  let cursor = view.cardList.firstElementChild;
+  for (const { el } of nextEntries.values()) {
+    if (el !== cursor) view.cardList.insertBefore(el, cursor);
+    cursor = el.nextElementSibling;
+  }
+  view.entries = nextEntries;
+  view.cards = board.cards;
+  view.searchTerm = searchTerm;
+};
+
+const updateBoardSearchBanner = (column, state, board, searchTerm) => {
+  column.querySelector(".board-search-banner")?.remove();
+  if (!searchTerm) return;
+  const matches = getSearchCounts(state, searchTerm);
+  const localMatch = matches.perBoard[board.id]?.match ?? 0;
+  const elsewhere = matches.total - localMatch;
+  if (localMatch !== 0 || elsewhere === 0) return;
+
+  let bestBoard = null;
+  let bestMatch = 0;
+  for (const [id, info] of Object.entries(matches.perBoard)) {
+    if (id !== board.id && info.match > bestMatch) {
+      bestMatch = info.match;
+      bestBoard = { id, info };
+    }
+  }
+  const banner = document.createElement("div");
+  banner.className = "board-search-banner";
+  banner.dataset.jumpBoardId = bestBoard?.id ?? "";
+  banner.dataset.jumpSpaceId = bestBoard?.info?.spaceId ?? "";
+  banner.tabIndex = 0;
+  banner.setAttribute("role", "button");
+  banner.textContent = `이 보드에는 결과가 없어요 — 다른 보드에서 ${elsewhere}개 발견`;
+  column.insertBefore(banner, column.querySelector(".card-list"));
+};
+
 export const renderBoard = (state, options = {}) => {
   const boardEl = getBoardEl(options);
   if (!boardEl) return;
 
   const space = options.getActiveSpace?.(state) ?? null;
   const searchTerm = state.preferences.searchTerm?.trim() ?? "";
-  const metaAction = options.metaAction ?? null;
   const activeBoardId = state.preferences.activeBoardId ?? null;
 
   // Find active board, or fallback to first board
@@ -454,39 +523,28 @@ export const renderBoard = (state, options = {}) => {
       null)
     : (space?.boards?.[0] ?? null);
 
-  const boardKey =
-    (activeBoard
-      ? activeBoard.id +
-        ":" +
-        activeBoard.name +
-        ":" +
-        activeBoard.cards
-          .map(
-            (c) =>
-              c.id +
-              "|" +
-              (c.favorite ? 1 : 0) +
-              "|" +
-              (c.done ? 1 : 0) +
-              "|" +
-              (c.updatedAt ?? ""),
-          )
-          .join(",")
-      : "") +
-    "|" +
-    searchTerm;
-
+  const previous = boardRenderCache.get(boardEl);
   if (
-    boardKey === lastRenderedBoardKey &&
-    metaAction !== "move-card" &&
-    metaAction !== "move-board"
+    activeBoard &&
+    previous?.boardId === activeBoard.id &&
+    previous.spaceId === space.id &&
+    previous.column.parentNode === boardEl
   ) {
+    if (previous.title.textContent !== activeBoard.name) {
+      previous.title.textContent = activeBoard.name;
+    }
+    const linkCount = activeBoard.cards.filter(
+      (card) => card.type === "link" && card.url,
+    ).length;
+    previous.metaButton.disabled = linkCount === 0;
+    previous.metaButton.title = linkCount === 0 ? "No links to open" : "";
+    previous.metaBadge.textContent = String(linkCount);
+    updateBoardCards(previous, activeBoard, searchTerm, options);
+    updateBoardSearchBanner(previous.column, state, activeBoard, searchTerm);
     return;
   }
-  if (boardKey !== lastRenderedBoardKey) {
-    searchMemoCache.clear();
-  }
-  lastRenderedBoardKey = boardKey;
+  boardRenderCache.delete(boardEl);
+  favoritesRenderCache.delete(boardEl);
 
   boardEl.classList.remove("favorites-view");
   boardEl.classList.remove("board-empty");
@@ -614,51 +672,32 @@ export const renderBoard = (state, options = {}) => {
   header.appendChild(headerControls);
   column.appendChild(header);
 
-  if (searchTerm) {
-    const matches = countMatchesAcrossSpaces(state, searchTerm);
-    const localMatch = matches.perBoard[activeBoard.id]?.match ?? 0;
-    const elsewhere = matches.total - localMatch;
-    if (localMatch === 0 && elsewhere > 0) {
-      let bestBoard = null;
-      let bestMatch = 0;
-      Object.entries(matches.perBoard).forEach(([id, info]) => {
-        if (id !== activeBoard.id && info.match > bestMatch) {
-          bestMatch = info.match;
-          bestBoard = { id, info };
-        }
-      });
-      const banner = document.createElement("div");
-      banner.className = "board-search-banner";
-      banner.dataset.jumpBoardId = bestBoard?.id ?? "";
-      banner.dataset.jumpSpaceId = bestBoard?.info?.spaceId ?? "";
-      banner.tabIndex = 0;
-      banner.setAttribute("role", "button");
-      banner.textContent = `이 보드에는 결과가 없어요 — 다른 보드에서 ${elsewhere}개 발견`;
-      column.appendChild(banner);
-    }
-  }
-
   const cardList = document.createElement("div");
   cardList.className = "card-list";
   cardList.dataset.boardId = activeBoard.id;
   cardList.dataset.spaceId = space.id;
   options.attachDropTargets?.(cardList);
 
-  activeBoard.cards.forEach((card) => {
-    const cardEl = createCardElement(card, activeBoard.id, searchTerm, {
-      animateCards: options.animateCards,
-      spaceId: space.id,
-      onCardDragStart: options.onCardDragStart,
-      onCardDragEnd: options.onCardDragEnd,
-    });
-    cardList.appendChild(cardEl);
-  });
-
   const dropIndicator = document.createElement("div");
   dropIndicator.className = "board-drop-indicator";
   cardList.appendChild(dropIndicator);
 
   column.appendChild(cardList);
+  const view = {
+    boardId: activeBoard.id,
+    spaceId: space.id,
+    column,
+    title,
+    metaButton,
+    metaBadge,
+    cardList,
+    entries: new Map(),
+    cards: null,
+    searchTerm: null,
+  };
+  updateBoardCards(view, activeBoard, searchTerm, options);
+  updateBoardSearchBanner(column, state, activeBoard, searchTerm);
+  boardRenderCache.set(boardEl, view);
 
   const addCardWrapper = document.createElement("div");
   addCardWrapper.className = "add-card-wrapper";
@@ -692,13 +731,14 @@ export const renderBoard = (state, options = {}) => {
   boardEl.appendChild(column);
 };
 
-export const getFavoriteGroups = (state, searchTerm) =>
-  state.spaces
+export const getFavoriteGroups = (state, searchTerm) => {
+  const matchesSearch = createCardSearchMatcher(searchTerm);
+  return state.spaces
     .map((space) => {
       const cards = [];
       space.boards.forEach((board) => {
         board.cards.forEach((card) => {
-          if (card.favorite && cardMatchesSearch(card, searchTerm)) {
+          if (card.favorite && matchesSearch(card)) {
             cards.push({
               card,
               boardId: board.id,
@@ -710,16 +750,33 @@ export const getFavoriteGroups = (state, searchTerm) =>
       return { space, cards };
     })
     .filter((group) => group.cards.length);
+};
 
 export const renderFavoritesBoard = (state, options = {}) => {
   const boardEl = getBoardEl(options);
   if (!boardEl) return;
-  lastRenderedBoardKey = null;
-  boardEl.classList.add("favorites-view");
-  boardEl.replaceChildren();
   const searchTerm = state.preferences.searchTerm?.trim();
   const favoriteGroups = getFavoriteGroups(state, searchTerm);
   const isFiltering = Boolean(searchTerm);
+  const favoritesKey = JSON.stringify([
+    isFiltering,
+    favoriteGroups.map(({ space, cards }) => [
+      space.id,
+      space.name,
+      space.accent,
+      cards.map(({ card, boardId, boardName }) => [
+        boardId,
+        boardName,
+        getCardRenderKey(card),
+      ]),
+    ]),
+  ]);
+  if (favoritesRenderCache.get(boardEl) === favoritesKey) return;
+  favoritesRenderCache.set(boardEl, favoritesKey);
+  boardRenderCache.delete(boardEl);
+  boardEl.classList.add("favorites-view");
+  boardEl.classList.remove("board-empty", "board-detail-view");
+  boardEl.replaceChildren();
 
   if (!favoriteGroups.length) {
     const empty = document.createElement("div");
